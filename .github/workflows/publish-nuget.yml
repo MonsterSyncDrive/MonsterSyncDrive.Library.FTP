@@ -2,7 +2,9 @@ name: Publish NuGet package
 
 on:
   push:
-  workflow_dispatch:
+    tags:
+      - 'v[0-9]*'
+      - '[0-9]*'
 
 permissions:
   contents: read
@@ -10,6 +12,7 @@ permissions:
 
 jobs:
   publish:
+    if: github.event.created == true && github.event.deleted == false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -21,31 +24,24 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Check release version
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER_TYPE: ${{ github.event.repository.owner.type }}
+        run: python3 .github/scripts/check-release.py
+
       - name: Set up .NET
+        if: steps.release.outputs.should_publish == 'true'
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
-      - name: Determine release version
-        env:
-          TZ: Asia/Shanghai
-        run: |
-          code_version="$(dotnet msbuild "$PROJECT_PATH" -nologo -getProperty:Version)"
-          if [[ ! "$code_version" =~ ^([0-9]+)\.([0-9]+)(\.|[-+]|$) ]]; then
-            echo "::error::Cannot read the project's major and minor version: $code_version"
-            exit 1
-          fi
-          major_minor="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
-          timestamp="$(date +%Y%m%d%H%M%S)"
-          # NuGet normalizes numeric segments, so remove time's leading zeros.
-          revision="$((10#${timestamp:8:6}))"
-          package_version="$major_minor.${timestamp:0:8}.$revision"
-          echo "PACKAGE_VERSION=$package_version" >> "$GITHUB_ENV"
-          echo "Release version: $package_version (Asia/Shanghai)"
-
       - name: Build and pack
+        if: steps.release.outputs.should_publish == 'true'
+        env:
+          PACKAGE_VERSION: ${{ steps.release.outputs.package_version }}
         # dotnet pack restores dependencies and builds before creating the package.
-        # Keep assembly versions from the project; date-based package segments can exceed their limits.
         run: >-
           dotnet pack "$PROJECT_PATH"
           --configuration Release
@@ -58,6 +54,7 @@ jobs:
           -p:RepositoryCommit="$GITHUB_SHA"
 
       - name: Publish to GitHub Packages
+        if: steps.release.outputs.should_publish == 'true'
         env:
           NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NUGET_SOURCE: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
