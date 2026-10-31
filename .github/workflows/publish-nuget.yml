@@ -14,8 +14,7 @@ jobs:
     timeout-minutes: 15
     env:
       PROJECT_PATH: MonsterSyncDrive.Library.FTP/MonsterSyncDrive.Library.FTP.csproj
-      # Include the attempt so re-running a workflow also creates a new version.
-      PACKAGE_VERSION: 1.0.0-ci.${{ github.run_number }}.${{ github.run_attempt }}
+      DOTNET_NOLOGO: 'true'
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -27,13 +26,32 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Determine release version
+        env:
+          TZ: Asia/Shanghai
+        run: |
+          code_version="$(dotnet msbuild "$PROJECT_PATH" -nologo -getProperty:Version)"
+          if [[ ! "$code_version" =~ ^([0-9]+)\.([0-9]+)(\.|[-+]|$) ]]; then
+            echo "::error::Cannot read the project's major and minor version: $code_version"
+            exit 1
+          fi
+          major_minor="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+          timestamp="$(date +%Y%m%d%H%M%S)"
+          # NuGet normalizes numeric segments, so remove time's leading zeros.
+          revision="$((10#${timestamp:8:6}))"
+          package_version="$major_minor.${timestamp:0:8}.$revision"
+          echo "PACKAGE_VERSION=$package_version" >> "$GITHUB_ENV"
+          echo "Release version: $package_version (Asia/Shanghai)"
+
       - name: Build and pack
         # dotnet pack restores dependencies and builds before creating the package.
+        # Keep assembly versions from the project; date-based package segments can exceed their limits.
         run: >-
           dotnet pack "$PROJECT_PATH"
           --configuration Release
           --output "$RUNNER_TEMP/nuget"
-          -p:Version="$PACKAGE_VERSION"
+          -p:PackageVersion="$PACKAGE_VERSION"
+          -p:InformationalVersion="$PACKAGE_VERSION"
           -p:ContinuousIntegrationBuild=true
           -p:RepositoryUrl="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
           -p:RepositoryType=git
