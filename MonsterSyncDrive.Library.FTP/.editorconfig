@@ -1,6 +1,14 @@
 # 如果要从更高级别的目录继承 .editorconfig 设置，请删除以下行
 root = true
 
+# this. 和 Me. 首选项：省略不必要的限定符，违反时警告
+[*.{cs,vb}]
+dotnet_style_qualification_for_event = false:warning
+dotnet_style_qualification_for_field = false:warning
+dotnet_style_qualification_for_method = false:warning
+dotnet_style_qualification_for_property = false:warning
+dotnet_diagnostic.IDE0003.severity = warning
+
 # c# 文件
 [*.cs]
 
@@ -31,12 +39,6 @@ dotnet_search_reference_assemblies = true
 dotnet_separate_import_directive_groups = false
 dotnet_sort_system_directives_first = false
 file_header_template = unset
-
-# this. 和 Me. 首选项
-dotnet_style_qualification_for_event = true
-dotnet_style_qualification_for_field = true
-dotnet_style_qualification_for_method = true
-dotnet_style_qualification_for_property = true
 
 # 语言关键字与 bcl 类型首选项
 dotnet_style_predefined_type_for_locals_parameters_members = true
@@ -157,7 +159,8 @@ csharp_style_allow_blank_line_after_colon_in_constructor_initializer_experimenta
 csharp_style_allow_blank_line_after_token_in_arrow_expression_clause_experimental = true
 csharp_style_allow_blank_line_after_token_in_conditional_expression_experimental = true
 csharp_style_allow_blank_lines_between_consecutive_braces_experimental = true
-csharp_style_allow_embedded_statements_on_same_line_experimental = true
+# if、for、while 等控制语句的执行语句另起一行
+csharp_style_allow_embedded_statements_on_same_line_experimental = false
 
 #### C# 格式规则 ####
 
@@ -203,8 +206,8 @@ csharp_space_between_parentheses = false
 csharp_space_between_square_brackets = false
 
 # 包装首选项
-csharp_preserve_single_line_blocks = true
-csharp_preserve_single_line_statements = true
+csharp_preserve_single_line_blocks = false
+csharp_preserve_single_line_statements = false
 
 #### 命名样式 ####
 
