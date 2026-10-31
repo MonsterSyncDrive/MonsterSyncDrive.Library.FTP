@@ -22,11 +22,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 -->
 
-# MonsterSyncDrive.FTP
+# MonsterSyncDrive.Library.FTP
 
 面向 .NET 10 的独立 FTP / FTPS 客户端库，使用 `Socket/TcpClient`、`SslStream` 等 BCL API 自行实现协议。运行库没有第三方 NuGet 依赖，也不引用本仓库的业务框架。支持 Windows、Linux、macOS，以及 .NET Native AOT 和裁剪。
 
-独立入口是仓库根目录的 [MonsterSyncDrive.FTP.slnx](../MonsterSyncDrive.FTP.slnx)。[Test.MonsterSyncDrive.FTP](../Test.MonsterSyncDrive.FTP) 在独立解决方案和主解决方案的 **200.测试工程** 文件夹中。
+独立入口是仓库根目录的 [MonsterSyncDrive.Library.FTP.slnx](../MonsterSyncDrive.Library.FTP.slnx)。客户端、配置、模型和异常统一位于 `MonsterSyncDrive.Library.FTP`，协议编解码器位于 `MonsterSyncDrive.Library.FTP.Protocol`。
 
 ## 功能
 
@@ -53,13 +53,13 @@ MFMT/MFCT、CHMOD、HASH、MODE Z 等需要服务器支持。默认使用 TYPE I
 项目引用：
 
 ```xml
-<ProjectReference Include="../MonsterSyncDrive.FTP/MonsterSyncDrive.FTP.csproj" />
+<ProjectReference Include="../MonsterSyncDrive.Library.FTP/MonsterSyncDrive.Library.FTP.csproj" />
 ```
 
 使用操作系统默认的证书验证连接显式 FTPS：
 
 ```csharp
-using MonsterSyncDrive.FTP;
+using MonsterSyncDrive.Library.FTP;
 
 await using var ftp = new FtpClient(new FtpOptions
 {
@@ -261,10 +261,10 @@ var options = new FtpOptions
 在仓库根目录构建独立解决方案：
 
 ```text
-dotnet build MonsterSyncDrive.FTP.slnx -c Release
+dotnet build MonsterSyncDrive.Library.FTP.slnx -c Release
 ```
 
-测试使用微软 MSTest + Microsoft.Testing.Platform。测试目录内的 `global.json` 只为本测试入口选择 .NET 10 测试运行器，避免改变仓库其他工程的测试配置。**从测试目录运行**：
+以下测试命令在 MonsterSyncDrive.App 仓库中执行，测试工程仍名为 `Test.MonsterSyncDrive.FTP`；验证本独立库时，需要将测试项目的库引用和 using 同步为本库及上述命名空间。测试使用微软 MSTest + Microsoft.Testing.Platform。测试目录内的 `global.json` 只为本测试入口选择 .NET 10 测试运行器，避免改变仓库其他工程的测试配置。**从测试目录运行**：
 
 ```text
 cd Test.MonsterSyncDrive.FTP
@@ -283,7 +283,7 @@ dotnet run --project Test.MonsterSyncDrive.FTP/Test.MonsterSyncDrive.FTP.csproj 
 
 库开启 `IsAotCompatible`、裁剪和 AOT 分析，不使用运行时生成代码、反射序列化或动态加载。应用项目需要自己设置 `PublishAot`。实际发布需要目标平台的本机工具链，参见 [.NET Native AOT 官方说明](https://learn.microsoft.com/dotnet/core/deploying/native-aot/)。
 
-从仓库根目录发布并运行本项目自带的独立 AOT 验证入口：
+在 MonsterSyncDrive.App 仓库根目录发布并运行独立 AOT 验证入口（验证本库时须先同步项目引用和 using）：
 
 ```text
 dotnet publish Test.MonsterSyncDrive.FTP/Test.MonsterSyncDrive.FTP.csproj -c Release -r win-x64 -p:AotSmoke=true --artifacts-path artifacts/ftp-aot-build -o artifacts/ftp-aot/win-x64

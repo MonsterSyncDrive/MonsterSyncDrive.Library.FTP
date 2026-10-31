@@ -77,10 +77,16 @@ public enum FtpFileStructure
 public sealed record FtpRestartMarker
 {
     /// <summary>发送端提供的、无空格的可打印 ASCII 标记。</summary>
-    public required string Marker { get; init; }
+    public required string Marker
+    {
+        get; init;
+    }
 
     /// <summary>本机此检查点之前已解码的应用字节数，可用于保存本地对应位置。</summary>
-    public long DecodedOffset { get; init; }
+    public long DecodedOffset
+    {
+        get; init;
+    }
 }
 
 /// <summary>
@@ -100,13 +106,22 @@ public sealed record FtpTransferSettings
     /// 适用于含 UTF-8 名称的 LIST/NLST：其隐含 ASCII 表示仍决定 MODE C 的空格填充，名称高位字节必须保留。
     /// 普通文件默认 false，以实际执行 ASCII/EBCDIC 转换。
     /// </summary>
-    public bool PreserveRepresentation { get; init; }
+    public bool PreserveRepresentation
+    {
+        get; init;
+    }
 
     /// <summary>传输模式；默认流模式。</summary>
-    public FtpTransmissionMode Mode { get; init; }
+    public FtpTransmissionMode Mode
+    {
+        get; init;
+    }
 
     /// <summary>文件结构；默认连续文件。</summary>
-    public FtpFileStructure Structure { get; init; }
+    public FtpFileStructure Structure
+    {
+        get; init;
+    }
 
     /// <summary>TYPE L 的逻辑字节位数。连续流允许 1..65535；页 API 使用 ulong，限制为 3..64（页头长度 4 至少需要三位）。</summary>
     public int LocalByteSize { get; init; } = 8;
@@ -127,20 +142,32 @@ public sealed record FtpTransferSettings
     public bool RejectSuspectedData { get; init; } = true;
 
     /// <summary>收到数据通道重启检查点时的同步通知；调用者可保存标记和对应的本地偏移。</summary>
-    public Action<FtpRestartMarker>? RestartMarkerReceived { get; init; }
+    public Action<FtpRestartMarker>? RestartMarkerReceived
+    {
+        get; init;
+    }
 
     /// <summary>校验枚举、逻辑字节大小和资源限额；不发送任何命令。</summary>
     public void Validate()
     {
-        if (!Enum.IsDefined(DataType)) throw new ArgumentOutOfRangeException(nameof(DataType));
-        if (!Enum.IsDefined(TextFormat)) throw new ArgumentOutOfRangeException(nameof(TextFormat));
-        if (!Enum.IsDefined(Mode)) throw new ArgumentOutOfRangeException(nameof(Mode));
-        if (!Enum.IsDefined(Structure)) throw new ArgumentOutOfRangeException(nameof(Structure));
-        if (!Enum.IsDefined(CompressionLevel)) throw new ArgumentOutOfRangeException(nameof(CompressionLevel));
-        if (LocalByteSize is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(LocalByteSize));
-        if (MaxDecodedBytes < 0) throw new ArgumentOutOfRangeException(nameof(MaxDecodedBytes));
-        if (MaxRecordBytes < 1) throw new ArgumentOutOfRangeException(nameof(MaxRecordBytes));
-        if (MaxPageLogicalBytes < 1) throw new ArgumentOutOfRangeException(nameof(MaxPageLogicalBytes));
+        if (!Enum.IsDefined(DataType))
+            throw new ArgumentOutOfRangeException(nameof(DataType));
+        if (!Enum.IsDefined(TextFormat))
+            throw new ArgumentOutOfRangeException(nameof(TextFormat));
+        if (!Enum.IsDefined(Mode))
+            throw new ArgumentOutOfRangeException(nameof(Mode));
+        if (!Enum.IsDefined(Structure))
+            throw new ArgumentOutOfRangeException(nameof(Structure));
+        if (!Enum.IsDefined(CompressionLevel))
+            throw new ArgumentOutOfRangeException(nameof(CompressionLevel));
+        if (LocalByteSize is < 1 or > 65535)
+            throw new ArgumentOutOfRangeException(nameof(LocalByteSize));
+        if (MaxDecodedBytes < 0)
+            throw new ArgumentOutOfRangeException(nameof(MaxDecodedBytes));
+        if (MaxRecordBytes < 1)
+            throw new ArgumentOutOfRangeException(nameof(MaxRecordBytes));
+        if (MaxPageLogicalBytes < 1)
+            throw new ArgumentOutOfRangeException(nameof(MaxPageLogicalBytes));
         if (Structure == FtpFileStructure.Page && DataType is not (FtpDataType.Image or FtpDataType.Local))
             throw new ArgumentException("页结构必须使用 Image 或 Local 的逻辑二进制表示。");
         if (Structure == FtpFileStructure.Page && DataType == FtpDataType.Local && LocalByteSize is < 3 or > 64)
@@ -148,13 +175,24 @@ public sealed record FtpTransferSettings
     }
 
     /// <summary>验证并取得供一次传输持有的配置快照。</summary>
-    public FtpTransferSettings Snapshot() { Validate(); return this with { }; }
+    public FtpTransferSettings Snapshot()
+    {
+        Validate();
+        return this with
+        {
+        };
+    }
 
     /// <summary>生成 TYPE 参数，例如 A N、E T、I 或 L 36。</summary>
     public string GetTypeArgument()
     {
         Validate();
-        var format = TextFormat switch { FtpTextFormat.NonPrint => "N", FtpTextFormat.Telnet => "T", _ => "C" };
+        string format = TextFormat switch
+        {
+            FtpTextFormat.NonPrint => "N",
+            FtpTextFormat.Telnet => "T",
+            _ => "C"
+        };
         return DataType switch
         {
             FtpDataType.Ascii => "A " + format,
@@ -168,14 +206,25 @@ public sealed record FtpTransferSettings
     public string GetModeArgument()
     {
         Validate();
-        return Mode switch { FtpTransmissionMode.Stream => "S", FtpTransmissionMode.Block => "B", FtpTransmissionMode.Compressed => "C", _ => "Z" };
+        return Mode switch
+        {
+            FtpTransmissionMode.Stream => "S",
+            FtpTransmissionMode.Block => "B",
+            FtpTransmissionMode.Compressed => "C",
+            _ => "Z"
+        };
     }
 
     /// <summary>生成 STRU 参数 F、R 或 P。</summary>
     public string GetStructureArgument()
     {
         Validate();
-        return Structure switch { FtpFileStructure.File => "F", FtpFileStructure.Record => "R", _ => "P" };
+        return Structure switch
+        {
+            FtpFileStructure.File => "F",
+            FtpFileStructure.Record => "R",
+            _ => "P"
+        };
     }
 }
 
@@ -196,7 +245,10 @@ public enum FtpPageType
 public sealed record FtpPage
 {
     /// <summary>页的逻辑索引，而非传输序号。</summary>
-    public ulong Index { get; init; }
+    public ulong Index
+    {
+        get; init;
+    }
 
     /// <summary>普通、描述或访问控制页；Last 终止页由编码器生成。</summary>
     public FtpPageType Type { get; init; } = FtpPageType.Simple;

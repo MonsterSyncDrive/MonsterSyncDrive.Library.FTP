@@ -20,44 +20,41 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-using MonsterSyncDrive.Library.FTP;
 using MonsterSyncDrive.Library.FTP.Protocol;
 using System.Collections.ObjectModel;
 using System.Globalization;
 
-namespace MonsterSyncDrive.FTP;
+namespace MonsterSyncDrive.Library.FTP;
 
 /// <summary>会话重置、登录前虚拟主机选择、扩展命令和机器列表选项的事务实现。</summary>
 public sealed partial class FtpClient
 {
-    /// <summary>最近一次成功 OPTS MLST 实际选择的 facts，只读快照；未协商时为空。</summary>
-    private IReadOnlyList<string> _selectedMachineListingFacts = Array.Empty<string>();
-
-    /// <summary>区分尚未协商和明确选择空 facts，两者不能使用同一个空集合含义。</summary>
-    private bool _hasMachineListingFactSelection;
-
-    /// <summary>本次控制会话成功通过 HOST 选择的虚拟主机。</summary>
-    private string? _selectedVirtualHost;
-
     /// <summary>最近一次 OPTS MLST 实际启用的字段；HasMachineListingFactSelection 为 false 时代表尚未协商。</summary>
-    public IReadOnlyList<string> SelectedMachineListingFacts => _selectedMachineListingFacts;
+    public IReadOnlyList<string> SelectedMachineListingFacts { get; private set; } = Array.Empty<string>();
 
     /// <summary>是否已经成功协商过 OPTS MLST，包括明确要求不返回任何 facts 的情形。</summary>
-    public bool HasMachineListingFactSelection => _hasMachineListingFactSelection;
+    public bool HasMachineListingFactSelection
+    {
+        get; private set;
+    }
 
     /// <summary>服务器已接受的 HOST 参数；没有发送 HOST 或已 REIN 时为空。</summary>
-    public string? SelectedVirtualHost => _selectedVirtualHost;
+    public string? SelectedVirtualHost
+    {
+        get; private set;
+    }
 
     /// <summary>
     /// 发送 REIN，保留 TCP 控制连接但清除身份、工作目录、传输参数和能力缓存。
     /// TLS 连接按 RFC 4217 在加密回复之后清除 TLS；重新登录请调用 LoginAsync。
     /// </summary>
     /// <param name="cancellationToken">取消排队或重置；无法确认协议状态时关闭连接。</param>
-    public Task ReinitializeAsync(CancellationToken cancellationToken = default) =>
-        RunAsync(async token =>
+    public Task ReinitializeAsync(CancellationToken cancellationToken = default)
+    {
+        return RunAsync(async token =>
         {
             EnsureSessionTransport();
-            var reply = await CommandAsync("REIN", null, token).ConfigureAwait(false);
+            FtpReply reply = await CommandAsync("REIN", null, token).ConfigureAwait(false);
             if (reply.Code == 120)
             {
                 // 120 表示稍后就绪；后续 220 与当前 REIN 属于同一事务。
@@ -67,6 +64,7 @@ public sealed partial class FtpClient
             Expect("REIN", reply, 220);
             await ResetSessionAfterReinitializeAsync(token).ConfigureAwait(false);
         }, cancellationToken, requireConnected: false);
+    }
 
     /// <summary>
     /// 在已建立但尚未认证的控制连接上选择 FTP 虚拟主机。HOST 不是 TCP 连接地址，
@@ -90,12 +88,13 @@ public sealed partial class FtpClient
     public Task<FtpReply> AllocateAsync(long bytes, long? maximumRecordSize = null, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(bytes);
-        if (maximumRecordSize is <= 0) throw new ArgumentOutOfRangeException(nameof(maximumRecordSize));
-        var argument = bytes.ToString(CultureInfo.InvariantCulture) +
+        if (maximumRecordSize is <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maximumRecordSize));
+        string argument = bytes.ToString(CultureInfo.InvariantCulture) +
             (maximumRecordSize.HasValue ? " R " + maximumRecordSize.Value.ToString(CultureInfo.InvariantCulture) : string.Empty);
         return RunAsync(async token =>
         {
-            var reply = await CommandAsync("ALLO", argument, token).ConfigureAwait(false);
+            FtpReply reply = await CommandAsync("ALLO", argument, token).ConfigureAwait(false);
             Expect("ALLO", reply, 200, 202);
             return reply;
         }, cancellationToken);
@@ -105,10 +104,10 @@ public sealed partial class FtpClient
     /// <returns>250 成功或 202 表示该服务器无需执行挂载。</returns>
     public Task<FtpReply> MountAsync(string path, CancellationToken cancellationToken = default)
     {
-        FtpPath.Validate(path);
+        _ = FtpPath.Validate(path);
         return RunAsync(async token =>
         {
-            var reply = await CommandAsync("SMNT", path, token).ConfigureAwait(false);
+            FtpReply reply = await CommandAsync("SMNT", path, token).ConfigureAwait(false);
             Expect("SMNT", reply, 202, 250);
             return reply;
         }, cancellationToken);
@@ -117,7 +116,7 @@ public sealed partial class FtpClient
     /// <summary>执行一个返回最终 2xx 回复的 SITE 操作；需要 3xx 中间状态的操作使用 ExecuteSiteSequenceAsync。</summary>
     public async Task<FtpReply> SiteAsync(string arguments, CancellationToken cancellationToken = default)
     {
-        var replies = await ExecuteSiteSequenceAsync(
+        IReadOnlyList<FtpReply> replies = await ExecuteSiteSequenceAsync(
             [new FtpSiteCommand { Arguments = arguments }], cancellationToken).ConfigureAwait(false);
         return replies[0];
     }
@@ -130,27 +129,30 @@ public sealed partial class FtpClient
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(commands);
-        var snapshot = commands.ToArray();
-        if (snapshot.Length is 0 or > 1024) throw new ArgumentOutOfRangeException(nameof(commands), "SITE 事务必须包含 1 至 1024 个步骤。");
-        foreach (var command in snapshot)
+        FtpSiteCommand[] snapshot = commands.ToArray();
+        if (snapshot.Length is 0 or > 1024)
+            throw new ArgumentOutOfRangeException(nameof(commands), "SITE 事务必须包含 1 至 1024 个步骤。");
+        foreach (FtpSiteCommand? command in snapshot)
         {
             ArgumentNullException.ThrowIfNull(command);
             FtpPath.ValidateArgument(command.Arguments, nameof(commands));
         }
-        if (snapshot[^1].RequiresContinuation)
-            throw new ArgumentException("SITE 事务最后一步必须返回最终回复。", nameof(commands));
-        return RunAsync(async token =>
+        return snapshot[^1].RequiresContinuation
+            ? throw new ArgumentException("SITE 事务最后一步必须返回最终回复。", nameof(commands))
+            : RunAsync(async token =>
         {
             var replies = new List<FtpReply>(snapshot.Length);
-            foreach (var command in snapshot)
+            foreach (FtpSiteCommand? command in snapshot)
             {
-                var reply = await CommandAsync("SITE", command.Arguments, token).ConfigureAwait(false);
+                FtpReply reply = await CommandAsync("SITE", command.Arguments, token).ConfigureAwait(false);
                 // 先记录中间状态，再验证调用者预期。未预期到的 1xx/3xx 也必须触发连接清理。
-                if (reply.IsPreliminary || reply.IsIntermediate) _pendingSequence = true;
+                if (reply.IsPreliminary || reply.IsIntermediate)
+                    _pendingSequence = true;
                 if (command.RequiresContinuation ? !reply.IsIntermediate : !reply.IsSuccess)
                     throw new FtpCommandException("SITE", reply);
                 replies.Add(reply);
-                if (!command.RequiresContinuation) _pendingSequence = false;
+                if (!command.RequiresContinuation)
+                    _pendingSequence = false;
             }
             return (IReadOnlyList<FtpReply>)replies.AsReadOnly();
         }, cancellationToken);
@@ -162,14 +164,15 @@ public sealed partial class FtpClient
     /// </summary>
     public Task<FtpReply> GetStatusAsync(string? path = null, CancellationToken cancellationToken = default)
     {
-        if (path is not null) FtpPath.Validate(path);
+        if (path is not null)
+            _ = FtpPath.Validate(path);
         return GetValidatedStatusCoreAsync(path, cancellationToken);
     }
 
     /// <summary>始终通过会话/活动传输竞争协调器取得 STAT 目标，消除检查状态后数据操作刚好开始的竞态。</summary>
     private async Task<FtpReply> GetValidatedStatusCoreAsync(string? path, CancellationToken cancellationToken)
     {
-        var reply = await GetTransferStatusAsync(path, cancellationToken).ConfigureAwait(false);
+        FtpReply reply = await GetTransferStatusAsync(path, cancellationToken).ConfigureAwait(false);
         Expect("STAT", reply, 211, 212, 213);
         return reply;
     }
@@ -181,14 +184,17 @@ public sealed partial class FtpClient
     public Task<FtpReply> SetOptionsAsync(string command, string? options = null, CancellationToken cancellationToken = default)
     {
         ValidateOptionCommand(command);
-        if (options is not null) FtpPath.ValidateArgument(options, nameof(options), allowEmpty: true);
-        if (command.Equals("MLST", StringComparison.OrdinalIgnoreCase)) ValidateFactSelection(options);
-        var argument = command.ToUpperInvariant() + (options is null ? string.Empty : " " + options);
+        if (options is not null)
+            FtpPath.ValidateArgument(options, nameof(options), allowEmpty: true);
+        if (command.Equals("MLST", StringComparison.OrdinalIgnoreCase))
+            ValidateFactSelection(options);
+        string argument = command.ToUpperInvariant() + (options is null ? string.Empty : " " + options);
         return RunAsync(async token =>
         {
-            var reply = await CommandAsync("OPTS", argument, token).ConfigureAwait(false);
+            FtpReply reply = await CommandAsync("OPTS", argument, token).ConfigureAwait(false);
             Expect("OPTS", reply, 200);
-            if (command.Equals("MLST", StringComparison.OrdinalIgnoreCase)) ApplyMachineFactSelection(reply);
+            if (command.Equals("MLST", StringComparison.OrdinalIgnoreCase))
+                ApplyMachineFactSelection(reply);
             return reply;
         }, cancellationToken);
     }
@@ -198,11 +204,13 @@ public sealed partial class FtpClient
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(factNames);
-        var names = factNames.ToArray();
-        foreach (var name in names) ValidateFactName(name, nameof(factNames));
-        var selection = string.Join(';', names.Distinct(StringComparer.OrdinalIgnoreCase));
-        if (selection.Length > 0) selection += ";";
-        var reply = await SetOptionsAsync("MLST", selection, cancellationToken).ConfigureAwait(false);
+        string[] names = factNames.ToArray();
+        foreach (string? name in names)
+            ValidateFactName(name, nameof(factNames));
+        string selection = string.Join(';', names.Distinct(StringComparer.OrdinalIgnoreCase));
+        if (selection.Length > 0)
+            selection += ";";
+        FtpReply reply = await SetOptionsAsync("MLST", selection, cancellationToken).ConfigureAwait(false);
         // 返回当前请求的确认结果，而不是再次读取共享状态；另一个已排队的 OPTS 可能已先更新缓存。
         return Array.AsReadOnly(ParseMachineFactSelection(reply));
     }
@@ -213,18 +221,18 @@ public sealed partial class FtpClient
     /// </summary>
     public Task<DateTimeOffset> SetCreatedTimeAsync(string path, DateTimeOffset createdTime, CancellationToken cancellationToken = default)
     {
-        FtpPath.Validate(path);
-        var time = createdTime.UtcDateTime.ToString("yyyyMMddHHmmss.fffffff", CultureInfo.InvariantCulture).TrimEnd('0').TrimEnd('.');
+        _ = FtpPath.Validate(path);
+        string time = createdTime.UtcDateTime.ToString("yyyyMMddHHmmss.fffffff", CultureInfo.InvariantCulture).TrimEnd('0').TrimEnd('.');
         return RunAsync(async token =>
         {
-            var reply = await CommandAsync("MFCT", time + " " + path, token).ConfigureAwait(false);
+            FtpReply reply = await CommandAsync("MFCT", time + " " + path, token).ConfigureAwait(false);
             Expect("MFCT", reply, 213);
-            var message = reply.Message;
-            var end = message.IndexOf(';');
-            if (!message.StartsWith("Create=", StringComparison.OrdinalIgnoreCase) || end <= 7 ||
-                end + 1 >= message.Length || message[end + 1] != ' ')
-                throw new FtpProtocolException("MFCT 成功回复没有包含实际的 Create 时间。");
-            return FtpListingParser.ParseTimestamp(message[7..end]);
+            string message = reply.Message;
+            int end = message.IndexOf(';');
+            return !message.StartsWith("Create=", StringComparison.OrdinalIgnoreCase) || end <= 7 ||
+                end + 1 >= message.Length || message[end + 1] != ' '
+                ? throw new FtpProtocolException("MFCT 成功回复没有包含实际的 Create 时间。")
+                : FtpListingParser.ParseTimestamp(message[7..end]);
         }, cancellationToken);
     }
 
@@ -233,29 +241,30 @@ public sealed partial class FtpClient
     {
         ValidateVirtualHost(host);
         Expect("HOST", await CommandAsync("HOST", host, cancellationToken).ConfigureAwait(false), 220);
-        _selectedVirtualHost = host;
+        SelectedVirtualHost = host;
     }
 
     /// <summary>清除由 REIN、断线和重新连接重置的扩展会话状态。</summary>
     private void ResetSessionExtensionState()
     {
-        _selectedMachineListingFacts = Array.Empty<string>();
-        _hasMachineListingFactSelection = false;
-        _selectedVirtualHost = null;
+        SelectedMachineListingFacts = Array.Empty<string>();
+        HasMachineListingFactSelection = false;
+        SelectedVirtualHost = null;
     }
 
     /// <summary>验证有可用控制连接；仅有配置的客户端不能发送登录前命令。</summary>
     private void EnsureSessionTransport()
     {
-        if (!IsTransportConnected) throw new InvalidOperationException("请先建立 FTP 控制连接。");
+        if (!IsTransportConnected)
+            throw new InvalidOperationException("请先建立 FTP 控制连接。");
     }
 
     /// <summary>验证 HOST 是单个主机名/IP，不允许附带协议、端口或路径。</summary>
     private static void ValidateVirtualHost(string host)
     {
         FtpPath.ValidateArgument(host, nameof(host));
-        var bracketed = host.StartsWith('[') || host.EndsWith(']');
-        var valid = bracketed
+        bool bracketed = host.StartsWith('[') || host.EndsWith(']');
+        bool valid = bracketed
             ? host.StartsWith('[') && host.EndsWith(']') && Uri.CheckHostName(host[1..^1]) == UriHostNameType.IPv6
             : Uri.CheckHostName(host) != UriHostNameType.Unknown;
         if (!valid || host.Contains('/') || host.Contains('\\'))
@@ -281,44 +290,56 @@ public sealed partial class FtpClient
     /// <summary>验证通用 OPTS MLST 参数，避免接受后才发现本地无法解析选项。</summary>
     private static void ValidateFactSelection(string? selection)
     {
-        if (string.IsNullOrEmpty(selection)) return;
-        if (selection[^1] != ';') throw new ArgumentException("MLST fact 列表必须以分号结束。", nameof(selection));
-        foreach (var name in selection[..^1].Split(';')) ValidateFactName(name, nameof(selection));
+        if (string.IsNullOrEmpty(selection))
+            return;
+        if (selection[^1] != ';')
+            throw new ArgumentException("MLST fact 列表必须以分号结束。", nameof(selection));
+        foreach (string name in selection[..^1].Split(';'))
+            ValidateFactName(name, nameof(selection));
     }
 
     /// <summary>解析 RFC 3659 的 MLST OPTS 回复，并同步 FEAT 中表示当前选择的星号。</summary>
     private void ApplyMachineFactSelection(FtpReply reply)
     {
-        var selected = ParseMachineFactSelection(reply);
-        _selectedMachineListingFacts = Array.AsReadOnly(selected);
-        _hasMachineListingFactSelection = true;
+        string[] selected = ParseMachineFactSelection(reply);
+        SelectedMachineListingFacts = Array.AsReadOnly(selected);
+        HasMachineListingFactSelection = true;
 
-        var featureLines = _features.ToList();
+        var featureLines = Features.ToList();
         var index = featureLines.FindIndex(static line => line.Equals("MLST", StringComparison.OrdinalIgnoreCase) ||
             line.StartsWith("MLST ", StringComparison.OrdinalIgnoreCase));
-        var advertised = index < 0 || featureLines[index].Length <= 5 ? new List<string>() :
+        List<string> advertised = index < 0 || featureLines[index].Length <= 5 ? [] :
             featureLines[index][5..].Split(';', StringSplitOptions.RemoveEmptyEntries)
                 .Select(static value => value.TrimEnd('*')).ToList();
-        foreach (var name in selected)
-            if (!advertised.Contains(name, StringComparer.OrdinalIgnoreCase)) advertised.Add(name);
-        var line = advertised.Count == 0 ? "MLST" : "MLST " + string.Join(';', advertised.Select(name =>
+        foreach (string name in selected)
+            if (!advertised.Contains(name, StringComparer.OrdinalIgnoreCase))
+                advertised.Add(name);
+        string line = advertised.Count == 0 ? "MLST" : "MLST " + string.Join(';', advertised.Select(name =>
             name + (selected.Contains(name, StringComparer.OrdinalIgnoreCase) ? "*" : string.Empty))) + ";";
-        if (index >= 0) featureLines[index] = line;
-        else featureLines.Add(line);
-        _features = new ReadOnlyCollection<string>(featureLines);
+        if (index >= 0)
+            featureLines[index] = line;
+        else
+            featureLines.Add(line);
+        Features = new ReadOnlyCollection<string>(featureLines);
     }
 
     /// <summary>读取服务器实际接受的字段集合；调用者可独立持有结果而不受后续并发选项修改影响。</summary>
     private static string[] ParseMachineFactSelection(FtpReply reply)
     {
         const string prefix = "MLST OPTS";
-        var message = reply.Message;
+        string message = reply.Message;
         if (!message.Equals(prefix, StringComparison.OrdinalIgnoreCase) &&
             !message.StartsWith(prefix + " ", StringComparison.OrdinalIgnoreCase))
             throw new FtpProtocolException("OPTS MLST 成功回复没有包含实际选择的字段。");
-        var selection = message.Length > prefix.Length ? message[(prefix.Length + 1)..] : string.Empty;
-        try { ValidateFactSelection(selection); }
-        catch (ArgumentException) { throw new FtpProtocolException("OPTS MLST 返回了无效的字段列表。"); }
+        string selection = message.Length > prefix.Length ? message[(prefix.Length + 1)..] : string.Empty;
+        try
+        {
+            ValidateFactSelection(selection);
+        }
+        catch (ArgumentException)
+        {
+            throw new FtpProtocolException("OPTS MLST 返回了无效的字段列表。");
+        }
         return selection.Length == 0 ? Array.Empty<string>() :
             selection[..^1].Split(';').Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }

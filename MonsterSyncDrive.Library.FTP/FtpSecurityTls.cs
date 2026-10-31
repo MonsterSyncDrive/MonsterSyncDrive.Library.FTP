@@ -39,19 +39,34 @@ public enum FtpTlsSessionReusePolicy
 public sealed record FtpTlsAuthenticationContext
 {
     /// <summary>尚未加密的 TCP 流。</summary>
-    public required Stream Transport { get; init; }
+    public required Stream Transport
+    {
+        get; init;
+    }
 
     /// <summary>主机名、证书验证、吊销与协议策略；自定义提供器必须遵守这些策略。</summary>
-    public required SslClientAuthenticationOptions AuthenticationOptions { get; init; }
+    public required SslClientAuthenticationOptions AuthenticationOptions
+    {
+        get; init;
+    }
 
     /// <summary>此连接是否是数据通道；主动模式的数据通道也由本端作为 TLS 客户端。</summary>
-    public bool IsDataChannel { get; init; }
+    public bool IsDataChannel
+    {
+        get; init;
+    }
 
     /// <summary>数据通道对应的控制 TLS 会话；CCC 之后其流可能已关闭，但恢复状态仍可用。</summary>
-    public FtpTlsSession? ControlSession { get; init; }
+    public FtpTlsSession? ControlSession
+    {
+        get; init;
+    }
 
     /// <summary>释放 TLS 包装流时是否必须保留底层 TCP，控制连接降级 CCC/REIN 需要此能力。</summary>
-    public bool LeaveTransportOpen { get; init; }
+    public bool LeaveTransportOpen
+    {
+        get; init;
+    }
 }
 
 /// <summary>
@@ -81,43 +96,77 @@ public sealed class FtpTlsSession : IDisposable, IAsyncDisposable
         object? resumptionState = null, Func<CancellationToken, Task>? shutdown = null, Action? release = null)
     {
         ArgumentNullException.ThrowIfNull(stream);
-        Stream = stream; IsResumed = isResumed; IsControlSessionReused = isControlSessionReused;
-        ResumptionState = resumptionState; _shutdown = shutdown; _release = release;
+        Stream = stream;
+        IsResumed = isResumed;
+        IsControlSessionReused = isControlSessionReused;
+        ResumptionState = resumptionState;
+        _shutdown = shutdown;
+        _release = release;
     }
 
     /// <summary>已经认证的 TLS 明文视图。</summary>
-    public Stream Stream { get; }
+    public Stream Stream
+    {
+        get;
+    }
 
     /// <summary>提供器观测到此次握手是否恢复了先前会话；平台无法观测时为空。</summary>
-    public bool? IsResumed { get; }
+    public bool? IsResumed
+    {
+        get;
+    }
 
     /// <summary>是否已经验证此次数据握手绑定到传入的指定控制会话；不可推测为 true。</summary>
-    public bool? IsControlSessionReused { get; }
+    public bool? IsControlSessionReused
+    {
+        get;
+    }
 
     /// <summary>只供同一提供器消费的不透明恢复状态，不应记录或序列化。</summary>
-    public object? ResumptionState { get; }
+    public object? ResumptionState
+    {
+        get;
+    }
 
     /// <summary>发送 TLS close_notify，以便随后保留原 TCP 并切回明文。</summary>
     public Task ShutdownAsync(CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        if (_shutdown is not null) return _shutdown(cancellationToken);
-        if (Stream is SslStream tls) return tls.ShutdownAsync().WaitAsync(cancellationToken);
-        throw new NotSupportedException("此 TLS 提供器没有实现保留底层传输的关闭通知。");
+        return _shutdown is not null
+            ? _shutdown(cancellationToken)
+            : Stream is SslStream tls
+            ? tls.ShutdownAsync().WaitAsync(cancellationToken)
+            : throw new NotSupportedException("此 TLS 提供器没有实现保留底层传输的关闭通知。");
     }
 
     /// <summary>释放流及提供器拥有的恢复资源，可重复调用。</summary>
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        try { Stream.Dispose(); } finally { _release?.Invoke(); }
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+        try
+        {
+            Stream.Dispose();
+        }
+        finally
+        {
+            _release?.Invoke();
+        }
     }
 
     /// <summary>异步释放流及提供器拥有的恢复资源。</summary>
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        try { await Stream.DisposeAsync().ConfigureAwait(false); } finally { _release?.Invoke(); }
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            return;
+        try
+        {
+            await Stream.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _release?.Invoke();
+        }
     }
 }
 
@@ -134,12 +183,16 @@ public sealed class FtpPlatformTlsProvider : IFtpTlsProvider
     public async Task<FtpTlsSession> AuthenticateAsync(FtpTlsAuthenticationContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
-        var tls = new SslStream(context.Transport, context.LeaveTransportOpen);
+        SslStream tls = new(context.Transport, context.LeaveTransportOpen);
         try
         {
             await tls.AuthenticateAsClientAsync(context.AuthenticationOptions, cancellationToken).ConfigureAwait(false);
             return new FtpTlsSession(tls);
         }
-        catch { tls.Dispose(); throw; }
+        catch
+        {
+            tls.Dispose();
+            throw;
+        }
     }
 }

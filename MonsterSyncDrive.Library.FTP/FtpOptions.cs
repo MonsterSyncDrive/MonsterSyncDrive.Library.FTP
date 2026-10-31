@@ -32,19 +32,31 @@ namespace MonsterSyncDrive.Library.FTP;
 public sealed record FtpOptions
 {
     /// <summary>服务器 DNS 名称或 IP 地址，不包含协议前缀、端口及路径。</summary>
-    public required string Host { get; init; }
+    public required string Host
+    {
+        get; init;
+    }
 
     /// <summary>可选的 FTP HOST 虚拟主机名称；在 AUTH/USER 前发送，与 TCP 连接地址和 TLS 证书名称分开。</summary>
-    public string? VirtualHost { get; init; }
+    public string? VirtualHost
+    {
+        get; init;
+    }
 
     /// <summary>可选 TLS 证书/SNI 主机名；为空时使用 VirtualHost 或 Host。</summary>
-    public string? TlsTargetHost { get; init; }
+    public string? TlsTargetHost
+    {
+        get; init;
+    }
 
     /// <summary>登录后应用的数据表示、传输模式和文件结构；默认二进制流式文件。</summary>
     public FtpTransferSettings TransferSettings { get; init; } = new();
 
     /// <summary>可选的非 TLS AUTH/ADAT 安全机制和命令保护策略。</summary>
-    public FtpSecurityOptions? Security { get; init; }
+    public FtpSecurityOptions? Security
+    {
+        get; init;
+    }
 
     /// <summary>TLS 认证提供器。默认使用操作系统 SslStream；提供器可实现可验证的会话复用。</summary>
     public IFtpTlsProvider TlsProvider { get; init; } = FtpPlatformTlsProvider.Instance;
@@ -53,7 +65,10 @@ public sealed record FtpOptions
     public FtpTlsSessionReusePolicy TlsSessionReuse { get; init; } = FtpTlsSessionReusePolicy.Allow;
 
     /// <summary>控制端口。零表示根据加密方式选择 21 或隐式 FTPS 的 990。</summary>
-    public int Port { get; init; }
+    public int Port
+    {
+        get; init;
+    }
 
     /// <summary>登录用户名；默认使用匿名登录。</summary>
     public string UserName { get; init; } = "anonymous";
@@ -62,10 +77,16 @@ public sealed record FtpOptions
     public string Password { get; init; } = "anonymous@";
 
     /// <summary>服务器返回 332 时提交的 ACCT 值；未配置时拒绝继续登录。</summary>
-    public string? Account { get; init; }
+    public string? Account
+    {
+        get; init;
+    }
 
     /// <summary>控制连接的加密方式；默认普通 FTP，生产环境建议显式 TLS。</summary>
-    public FtpEncryptionMode Encryption { get; init; }
+    public FtpEncryptionMode Encryption
+    {
+        get; init;
+    }
 
     /// <summary>FTPS 是否加密数据连接；默认使用 PROT P。</summary>
     public bool EncryptDataChannel { get; init; } = true;
@@ -77,25 +98,43 @@ public sealed record FtpOptions
     public X509RevocationMode CertificateRevocationCheckMode { get; init; } = X509RevocationMode.Online;
 
     /// <summary>可选的证书验证回调，适用于私有 CA 或证书固定。为空时执行平台默认验证。</summary>
-    public RemoteCertificateValidationCallback? CertificateValidation { get; init; }
+    public RemoteCertificateValidationCallback? CertificateValidation
+    {
+        get; init;
+    }
 
     /// <summary>可选的 TLS 客户端证书；证书必须在会话结束前保持有效。</summary>
-    public X509CertificateCollection? ClientCertificates { get; init; }
+    public X509CertificateCollection? ClientCertificates
+    {
+        get; init;
+    }
 
     /// <summary>数据连接方式；默认先 EPSV，在 IPv4 且明确不支持时回退 PASV。</summary>
     public FtpDataConnectionMode DataConnectionMode { get; init; } = FtpDataConnectionMode.AutoPassive;
 
     /// <summary>是否信任 PASV 回包中的 IP。默认忽略该地址并连接控制通道对端，避免 NAT 故障和地址跳转。</summary>
-    public bool TrustPassiveAddress { get; init; }
+    public bool TrustPassiveAddress
+    {
+        get; init;
+    }
 
     /// <summary>主动模式绑定地址。为空时使用控制连接本地地址；不可与控制连接地址族不同。</summary>
-    public IPAddress? ActiveBindAddress { get; init; }
+    public IPAddress? ActiveBindAddress
+    {
+        get; init;
+    }
 
     /// <summary>主动模式公布给服务器的地址，用于已配置端口映射的 NAT；为空时使用绑定地址。</summary>
-    public IPAddress? ActiveAdvertisedAddress { get; init; }
+    public IPAddress? ActiveAdvertisedAddress
+    {
+        get; init;
+    }
 
     /// <summary>主动模式监听端口。零表示由操作系统分配；固定端口需要调用者配置防火墙。</summary>
-    public int ActivePort { get; init; }
+    public int ActivePort
+    {
+        get; init;
+    }
 
     /// <summary>控制命令与目录文本编码。默认严格 UTF-8；旧服务器可显式设置 Latin1 等编码。</summary>
     public Encoding Encoding { get; init; } = new UTF8Encoding(false, true);
@@ -149,15 +188,19 @@ public sealed record FtpOptions
             throw new ArgumentOutOfRangeException(nameof(Port), "端口必须位于 0 至 65535。");
         FtpPath.ValidateArgument(UserName, nameof(UserName), allowEmpty: true);
         FtpPath.ValidateArgument(Password, nameof(Password), allowEmpty: true);
-        if (Account is not null) FtpPath.ValidateArgument(Account, nameof(Account), allowEmpty: true);
+        if (Account is not null)
+            FtpPath.ValidateArgument(Account, nameof(Account), allowEmpty: true);
         ArgumentNullException.ThrowIfNull(Encoding);
         ArgumentNullException.ThrowIfNull(TransferSettings);
         ArgumentNullException.ThrowIfNull(TlsProvider);
-        if (VirtualHost is not null) FtpPath.ValidateArgument(VirtualHost, nameof(VirtualHost));
-        if (TlsTargetHost is not null) FtpPath.ValidateArgument(TlsTargetHost, nameof(TlsTargetHost));
-        var transferSettings = TransferSettings.Snapshot();
+        if (VirtualHost is not null)
+            FtpPath.ValidateArgument(VirtualHost, nameof(VirtualHost));
+        if (TlsTargetHost is not null)
+            FtpPath.ValidateArgument(TlsTargetHost, nameof(TlsTargetHost));
+        FtpTransferSettings transferSettings = TransferSettings.Snapshot();
         Security?.Validate();
-        if (!Enum.IsDefined(TlsSessionReuse)) throw new ArgumentOutOfRangeException(nameof(TlsSessionReuse));
+        if (!Enum.IsDefined(TlsSessionReuse))
+            throw new ArgumentOutOfRangeException(nameof(TlsSessionReuse));
         const string asciiProbe = "\r\n !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~";
         if (!Encoding.GetBytes(asciiProbe).AsSpan().SequenceEqual(System.Text.Encoding.ASCII.GetBytes(asciiProbe)))
             throw new ArgumentException("FTP 控制通道编码必须兼容 ASCII，例如 UTF-8、Latin1 或已注册的 GBK。", nameof(Encoding));
@@ -165,14 +208,17 @@ public sealed record FtpOptions
         ValidateTimeout(ConnectTimeout, nameof(ConnectTimeout));
         ValidateTimeout(CommandTimeout, nameof(CommandTimeout));
         ValidateTimeout(DataTimeout, nameof(DataTimeout));
-        if (!Enum.IsDefined(Encryption)) throw new ArgumentOutOfRangeException(nameof(Encryption));
-        if (!Enum.IsDefined(DataConnectionMode)) throw new ArgumentOutOfRangeException(nameof(DataConnectionMode));
-        if (BufferSize is < 1024 or > 1048576) throw new ArgumentOutOfRangeException(nameof(BufferSize));
+        if (!Enum.IsDefined(Encryption))
+            throw new ArgumentOutOfRangeException(nameof(Encryption));
+        if (!Enum.IsDefined(DataConnectionMode))
+            throw new ArgumentOutOfRangeException(nameof(DataConnectionMode));
+        if (BufferSize is < 1024 or > 1048576)
+            throw new ArgumentOutOfRangeException(nameof(BufferSize));
         if (MaxLineLength < 256 || MaxReplyBytes < MaxLineLength || MaxReplyLines < 1 ||
             MaxListingBytes < MaxLineLength || MaxListingEntries < 1 ||
             MaxRecursionDepth is < 1 or > 256 || MaxRecursiveEntries < 1)
             throw new ArgumentOutOfRangeException(nameof(MaxLineLength), "回复、列表和递归限制必须为有效的正数。");
-        var encoding = (Encoding)Encoding.Clone();
+        Encoding encoding = (Encoding)Encoding.Clone();
         encoding.EncoderFallback = EncoderFallback.ExceptionFallback;
         encoding.DecoderFallback = DecoderFallback.ExceptionFallback;
         return this with

@@ -27,6 +27,7 @@ SOFTWARE.
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <RootNamespace>MonsterSyncDrive.Library.FTP</RootNamespace>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
     <IsAotCompatible>true</IsAotCompatible>

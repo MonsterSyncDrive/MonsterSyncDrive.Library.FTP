@@ -20,10 +20,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-using MonsterSyncDrive.Library.FTP;
 using System.Runtime.CompilerServices;
 
-namespace MonsterSyncDrive.FTP.Protocol;
+namespace MonsterSyncDrive.Library.FTP.Protocol;
 
 /// <summary>RFC 959 页结构的逻辑字节打包；页头不是固定四个八位字节，TYPE L n 时每个字段占 n 位。</summary>
 public static partial class FtpDataCodec
@@ -33,20 +32,23 @@ public static partial class FtpDataCodec
         bool leaveOpen = true, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ValidatePageSettings(settings);
-        await using var decoder = CreateReadStream(source, settings, leaveOpen);
-        var bits = new LogicalByteReader(decoder, settings.DataType == FtpDataType.Local ? settings.LocalByteSize : 8);
+        await using FtpDataReadStream decoder = CreateReadStream(source, settings, leaveOpen);
+        LogicalByteReader bits = new(decoder, settings.DataType == FtpDataType.Local ? settings.LocalByteSize : 8);
         while (true)
         {
             var headerLength = await bits.ReadAsync(cancellationToken).ConfigureAwait(false);
-            if (headerLength is < 4 or > 4096) throw new FtpProtocolException("FTP 页头长度无效或超过有界限制。");
+            if (headerLength is < 4 or > 4096)
+                throw new FtpProtocolException("FTP 页头长度无效或超过有界限制。");
             var index = await bits.ReadAsync(cancellationToken).ConfigureAwait(false);
             var dataLength = await bits.ReadAsync(cancellationToken).ConfigureAwait(false);
             var typeValue = await bits.ReadAsync(cancellationToken).ConfigureAwait(false);
-            if (typeValue > 3) throw new FtpProtocolException("FTP 页类型不受支持。");
-            var type = (FtpPageType)typeValue;
+            if (typeValue > 3)
+                throw new FtpProtocolException("FTP 页类型不受支持。");
+            FtpPageType type = (FtpPageType)typeValue;
             if (type == FtpPageType.Last)
             {
-                if (headerLength != 4 || dataLength != 0) throw new FtpProtocolException("最后页必须有四字段页头和零数据长度。");
+                if (headerLength != 4 || dataLength != 0)
+                    throw new FtpProtocolException("最后页必须有四字段页头和零数据长度。");
                 bits.ValidatePadding();
                 // 页的 Last 已提供结构 EOF；块/C/Z 模式仍需消费其自身的 EOF/校验尾部。
                 // 普通 S/P 允许保留数据连接，不在 Last 后等待物理 TCP 关闭。
@@ -54,10 +56,11 @@ public static partial class FtpDataCodec
                     throw new FtpProtocolException("FTP 最后页之后仍包含额外数据。");
                 yield break;
             }
-            if (type == FtpPageType.Simple && headerLength != 4 ||
-                type == FtpPageType.AccessControlled && headerLength != 5)
+            if ((type == FtpPageType.Simple && headerLength != 4) ||
+                (type == FtpPageType.AccessControlled && headerLength != 5))
                 throw new FtpProtocolException("FTP 页类型与页头长度不一致。");
-            if (dataLength > (ulong)settings.MaxPageLogicalBytes) throw new FtpProtocolException("FTP 页数据超过逻辑字节数限制。");
+            if (dataLength > (ulong)settings.MaxPageLogicalBytes)
+                throw new FtpProtocolException("FTP 页数据超过逻辑字节数限制。");
             var extensions = new ulong[(int)headerLength - 4];
             for (var position = 0; position < extensions.Length; position++)
                 extensions[position] = await bits.ReadAsync(cancellationToken).ConfigureAwait(false);
@@ -80,11 +83,11 @@ public static partial class FtpDataCodec
     {
         ArgumentNullException.ThrowIfNull(pages);
         ValidatePageSettings(settings);
-        await using var encoder = CreateWriteStream(destination, settings, leaveOpen);
+        await using FtpDataWriteStream encoder = CreateWriteStream(destination, settings, leaveOpen);
         var width = settings.DataType == FtpDataType.Local ? settings.LocalByteSize : 8;
-        var bits = new LogicalByteWriter(encoder, width);
+        LogicalByteWriter bits = new(encoder, width);
         var maximum = width == 64 ? ulong.MaxValue : (1UL << width) - 1;
-        foreach (var page in pages)
+        foreach (FtpPage page in pages)
         {
             cancellationToken.ThrowIfCancellationRequested();
             ArgumentNullException.ThrowIfNull(page);
@@ -96,8 +99,8 @@ public static partial class FtpDataCodec
                 throw new ArgumentException("页数据或页头超过配置的长度限制。", nameof(pages));
             var data = page.Data.ToArray();
             var extensions = page.HeaderExtensions.ToArray();
-            if (page.Type == FtpPageType.Simple && extensions.Length != 0 ||
-                page.Type == FtpPageType.AccessControlled && extensions.Length != 1)
+            if ((page.Type == FtpPageType.Simple && extensions.Length != 0) ||
+                (page.Type == FtpPageType.AccessControlled && extensions.Length != 1))
                 throw new ArgumentException("页扩展字段数量与页类型不一致。", nameof(pages));
             var headerLength = checked((ulong)extensions.Length + 4);
             if (headerLength > maximum || (ulong)data.Length > maximum || page.Index > maximum ||
@@ -108,8 +111,10 @@ public static partial class FtpDataCodec
             await bits.WriteAsync(page.Index, cancellationToken).ConfigureAwait(false);
             await bits.WriteAsync((ulong)data.Length, cancellationToken).ConfigureAwait(false);
             await bits.WriteAsync((ulong)page.Type, cancellationToken).ConfigureAwait(false);
-            foreach (var extension in extensions) await bits.WriteAsync(extension, cancellationToken).ConfigureAwait(false);
-            foreach (var value in data) await bits.WriteAsync(value, cancellationToken).ConfigureAwait(false);
+            foreach (var extension in extensions)
+                await bits.WriteAsync(extension, cancellationToken).ConfigureAwait(false);
+            foreach (var value in data)
+                await bits.WriteAsync(value, cancellationToken).ConfigureAwait(false);
         }
         await bits.WriteAsync(4, cancellationToken).ConfigureAwait(false);
         await bits.WriteAsync(0, cancellationToken).ConfigureAwait(false);
@@ -124,7 +129,8 @@ public static partial class FtpDataCodec
     {
         ArgumentNullException.ThrowIfNull(settings);
         settings.Validate();
-        if (settings.Structure != FtpFileStructure.Page) throw new ArgumentException("页 API 要求 STRU P。", nameof(settings));
+        if (settings.Structure != FtpFileStructure.Page)
+            throw new ArgumentException("页 API 要求 STRU P。", nameof(settings));
     }
 
     /// <summary>从八位传输流读取 n 位逻辑字节，跨传输字节时不引入填充。</summary>
@@ -142,7 +148,11 @@ public static partial class FtpDataCodec
         private int _available;
 
         /// <summary>初始化有界逻辑字节读取器。</summary>
-        internal LogicalByteReader(Stream stream, int width) { _stream = stream; _width = width; }
+        internal LogicalByteReader(Stream stream, int width)
+        {
+            _stream = stream;
+            _width = width;
+        }
 
         /// <summary>读取恰好一个逻辑字节；页头或数据截断均视为协议错误。</summary>
         internal async Task<ulong> ReadAsync(CancellationToken cancellationToken)
@@ -188,7 +198,11 @@ public static partial class FtpDataCodec
         private int _used;
 
         /// <summary>初始化逻辑位打包器。</summary>
-        internal LogicalByteWriter(Stream stream, int width) { _stream = stream; _width = width; }
+        internal LogicalByteWriter(Stream stream, int width)
+        {
+            _stream = stream;
+            _width = width;
+        }
 
         /// <summary>按高位优先顺序写一个逻辑字节，整个文件只在最后一次补零。</summary>
         internal async Task WriteAsync(ulong value, CancellationToken cancellationToken)
@@ -199,7 +213,8 @@ public static partial class FtpDataCodec
                 if (++_used == 8)
                 {
                     _buffer[_count++] = (byte)_pending;
-                    _used = 0; _pending = 0;
+                    _used = 0;
+                    _pending = 0;
                     if (_count == _buffer.Length)
                     {
                         await _stream.WriteAsync(_buffer, cancellationToken).ConfigureAwait(false);
@@ -212,9 +227,13 @@ public static partial class FtpDataCodec
         /// <summary>补齐最后一个传输字节，并刷新剩余的有界数据缓冲。</summary>
         internal async Task CompleteAsync(CancellationToken cancellationToken)
         {
-            if (_used != 0) _buffer[_count++] = (byte)(_pending << (8 - _used));
-            if (_count != 0) await _stream.WriteAsync(_buffer.AsMemory(0, _count), cancellationToken).ConfigureAwait(false);
-            _count = 0; _used = 0; _pending = 0;
+            if (_used != 0)
+                _buffer[_count++] = (byte)(_pending << (8 - _used));
+            if (_count != 0)
+                await _stream.WriteAsync(_buffer.AsMemory(0, _count), cancellationToken).ConfigureAwait(false);
+            _count = 0;
+            _used = 0;
+            _pending = 0;
         }
     }
 }

@@ -36,7 +36,11 @@ internal sealed class FtpTimedDataStream : Stream
 
     /// <summary>创建不拥有底层流的超时视图。</summary>
     internal FtpTimedDataStream(Stream inner, TimeSpan timeout, CancellationToken operationToken)
-    { _inner = inner; _timeout = timeout; _operationToken = operationToken; }
+    {
+        _inner = inner;
+        _timeout = timeout;
+        _operationToken = operationToken;
+    }
 
     /// <summary>底层是否可读。</summary>
     public override bool CanRead => _inner.CanRead;
@@ -47,12 +51,15 @@ internal sealed class FtpTimedDataStream : Stream
     /// <summary>网络流不提供总长度。</summary>
     public override long Length => throw new NotSupportedException();
     /// <summary>网络流不提供位置。</summary>
-    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override long Position
+    {
+        get => throw new NotSupportedException(); set => throw new NotSupportedException();
+    }
 
     /// <summary>异步读取底层字节，将单次超时与调用者/ABOR取消区分。</summary>
     public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(_operationToken, cancellationToken);
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(_operationToken, cancellationToken);
         return await FtpTimeout.RunAsync(token => _inner.ReadAsync(buffer, token).AsTask(), _timeout, linked.Token, "网络数据读取")
             .ConfigureAwait(false);
     }
@@ -60,7 +67,7 @@ internal sealed class FtpTimedDataStream : Stream
     /// <summary>异步写入底层字节并限制单次 I/O 时间。</summary>
     public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
     {
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(_operationToken, cancellationToken);
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(_operationToken, cancellationToken);
         await FtpTimeout.RunAsync(token => _inner.WriteAsync(buffer, token).AsTask(), _timeout, linked.Token, "网络数据写入")
             .ConfigureAwait(false);
     }
@@ -68,24 +75,49 @@ internal sealed class FtpTimedDataStream : Stream
     /// <summary>异步刷新底层流。</summary>
     public override async Task FlushAsync(CancellationToken cancellationToken)
     {
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(_operationToken, cancellationToken);
-        await FtpTimeout.RunAsync(token => _inner.FlushAsync(token), _timeout, linked.Token, "网络数据刷新").ConfigureAwait(false);
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(_operationToken, cancellationToken);
+        await FtpTimeout.RunAsync(_inner.FlushAsync, _timeout, linked.Token, "网络数据刷新").ConfigureAwait(false);
     }
 
     /// <summary>兼容数组读取入口。</summary>
-    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-        ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        return ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+    }
+
     /// <summary>兼容数组写入入口。</summary>
-    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-        WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        return WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+    }
+
     /// <summary>同步读取适配。</summary>
-    public override int Read(byte[] buffer, int offset, int count) => ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        return ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+    }
+
     /// <summary>同步写入适配。</summary>
-    public override void Write(byte[] buffer, int offset, int count) => WriteAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+    public override void Write(byte[] buffer, int offset, int count)
+    {
+        WriteAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+    }
+
     /// <summary>同步刷新适配。</summary>
-    public override void Flush() => FlushAsync(CancellationToken.None).GetAwaiter().GetResult();
+    public override void Flush()
+    {
+        FlushAsync(CancellationToken.None).GetAwaiter().GetResult();
+    }
+
     /// <summary>不支持定位。</summary>
-    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override long Seek(long offset, SeekOrigin origin)
+    {
+        throw new NotSupportedException();
+    }
+
     /// <summary>不支持改变长度。</summary>
-    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void SetLength(long value)
+    {
+        throw new NotSupportedException();
+    }
 }

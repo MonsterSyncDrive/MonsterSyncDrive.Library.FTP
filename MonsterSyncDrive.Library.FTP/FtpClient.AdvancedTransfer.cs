@@ -20,9 +20,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-using MonsterSyncDrive.Library.FTP;
 
-namespace MonsterSyncDrive.FTP;
+namespace MonsterSyncDrive.Library.FTP;
 
 /// <summary>唯一命名上传及不透明 REST 检查点传输，所有成功结果都以服务器最终完成回复为准。</summary>
 public sealed partial class FtpClient
@@ -32,16 +31,23 @@ public sealed partial class FtpClient
         IProgress<FtpTransferProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
-        if (!source.CanRead) throw new ArgumentException("源流必须可读。", nameof(source));
-        if (nameHint is not null) FtpPath.Validate(nameHint);
+        if (!source.CanRead)
+            throw new ArgumentException("源流必须可读。", nameof(source));
+        if (nameHint is not null)
+            _ = FtpPath.Validate(nameHint);
         return RunAsync(async token =>
         {
-            var stream = await StartDataAsync("STOU", nameHint, 0, token).ConfigureAwait(false);
-            var preliminary = _lastDataPreliminaryReply!;
-            var name = ParseUniqueName(preliminary);
-            var (transferred, completion) = await CopyUploadDataAsync(name, source, stream, 0, progress, token).ConfigureAwait(false);
+            Stream stream = await StartDataAsync("STOU", nameHint, 0, token).ConfigureAwait(false);
+            FtpReply preliminary = _lastDataPreliminaryReply!;
+            string name = ParseUniqueName(preliminary);
+            (long transferred, FtpReply? completion) = await CopyUploadDataAsync(name, source, stream, 0, progress, token).ConfigureAwait(false);
             return new FtpUniqueUploadResult
-            { RemotePath = name, BytesTransferred = transferred, PreliminaryReply = preliminary, CompletionReply = completion };
+            {
+                RemotePath = name,
+                BytesTransferred = transferred,
+                PreliminaryReply = preliminary,
+                CompletionReply = completion
+            };
         }, cancellationToken);
     }
 
@@ -81,9 +87,10 @@ public sealed partial class FtpClient
     public Task<long> DownloadFromMarkerAsync(string remotePath, Stream destination, string restartMarker,
         CancellationToken cancellationToken = default)
     {
-        FtpPath.Validate(remotePath);
+        _ = FtpPath.Validate(remotePath);
         ArgumentNullException.ThrowIfNull(destination);
-        if (!destination.CanWrite) throw new ArgumentException("目标流必须可写。", nameof(destination));
+        if (!destination.CanWrite)
+            throw new ArgumentException("目标流必须可写。", nameof(destination));
         ValidateOpaqueRestartMarker(restartMarker);
         return RunAsync(token => CopyDownloadAsync(remotePath, destination, 0, null, null, null, token, restartMarker), cancellationToken);
     }
@@ -92,9 +99,10 @@ public sealed partial class FtpClient
     public Task<long> UploadFromMarkerAsync(string remotePath, Stream source, string restartMarker,
         CancellationToken cancellationToken = default)
     {
-        FtpPath.Validate(remotePath);
+        _ = FtpPath.Validate(remotePath);
         ArgumentNullException.ThrowIfNull(source);
-        if (!source.CanRead) throw new ArgumentException("源流必须可读。", nameof(source));
+        if (!source.CanRead)
+            throw new ArgumentException("源流必须可读。", nameof(source));
         ValidateOpaqueRestartMarker(restartMarker);
         return RunAsync(token => CopyUploadAsync(remotePath, source, 0, false, null, token, restartMarker), cancellationToken);
     }
@@ -102,11 +110,11 @@ public sealed partial class FtpClient
     /// <summary>解析 RFC1123 明确定义的 FILE: 唯一路径，不猜测自然语言回复中的文件名。</summary>
     private static string ParseUniqueName(FtpReply preliminary)
     {
-        var message = preliminary.Message;
+        string message = preliminary.Message;
         if (!message.StartsWith("FILE: ", StringComparison.OrdinalIgnoreCase) || message.Length <= 6)
             throw new FtpProtocolException("STOU 预备回复没有包含 RFC1123 规定的 FILE: 唯一路径。");
-        var name = message[6..];
-        FtpPath.Validate(name);
+        string name = message[6..];
+        _ = FtpPath.Validate(name);
         return name;
     }
 

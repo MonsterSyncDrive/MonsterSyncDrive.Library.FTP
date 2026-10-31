@@ -33,7 +33,10 @@ public sealed class FtpTransferAbortedException : FtpException
     }
 
     /// <summary>中止事务的结果及服务器原始回复。</summary>
-    public FtpAbortResult Result { get; }
+    public FtpAbortResult Result
+    {
+        get;
+    }
 }
 
 /// <summary>ABOR 执行选项。默认带内命令适用于明文、TLS 和 RFC 2228 保护通道。</summary>
@@ -43,7 +46,10 @@ public sealed record FtpAbortOptions
     /// 明文控制连接是否先发送 Telnet IP/SYNCH（TCP urgent Data Mark）。
     /// 仅用于要求该历史机制的服务器；TLS 或受保护命令通道禁止该选项。
     /// </summary>
-    public bool SendTelnetInterrupt { get; init; }
+    public bool SendTelnetInterrupt
+    {
+        get; init;
+    }
 }
 
 /// <summary>已完成并通过 NOOP 屏障确认同步的 ABOR 事务。</summary>
@@ -58,11 +64,20 @@ public sealed class FtpAbortResult
     }
 
     /// <summary>请求中止时是否确有一个已收到 125/150 的数据命令。</summary>
-    public bool WasTransferring { get; }
+    public bool WasTransferring
+    {
+        get;
+    }
 
     /// <summary>是否使用了明文 Telnet IP/SYNCH 通知。</summary>
-    public bool UsedTelnetInterrupt { get; }
+    public bool UsedTelnetInterrupt
+    {
+        get;
+    }
 
     /// <summary>ABOR 及其之前数据命令的最终回复，不包含内部 NOOP 屏障回复。</summary>
-    public IReadOnlyList<FtpReply> Replies { get; }
+    public IReadOnlyList<FtpReply> Replies
+    {
+        get;
+    }
 }

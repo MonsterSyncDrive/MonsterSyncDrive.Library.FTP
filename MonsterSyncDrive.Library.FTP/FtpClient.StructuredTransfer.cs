@@ -20,10 +20,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-using MonsterSyncDrive.FTP.Protocol;
-using MonsterSyncDrive.Library.FTP;
+using MonsterSyncDrive.Library.FTP.Protocol;
 
-namespace MonsterSyncDrive.FTP;
+namespace MonsterSyncDrive.Library.FTP;
 
 /// <summary>记录与页结构专用传输，显式保留记录边界、页索引和页头，不把结构化文件扁平化。</summary>
 public sealed partial class FtpClient
@@ -32,16 +31,20 @@ public sealed partial class FtpClient
     public Task UploadRecordsAsync(string remotePath, IEnumerable<ReadOnlyMemory<byte>> records,
         string? restartMarker = null, CancellationToken cancellationToken = default)
     {
-        FtpPath.Validate(remotePath);
+        _ = FtpPath.Validate(remotePath);
         ArgumentNullException.ThrowIfNull(records);
-        if (restartMarker is not null) ValidateOpaqueRestartMarker(restartMarker);
+        if (restartMarker is not null)
+            ValidateOpaqueRestartMarker(restartMarker);
         return RunAsync(async token =>
         {
-            await ApplyTransferSettingsCoreAsync(_transferSettings with { Structure = FtpFileStructure.Record }, token).ConfigureAwait(false);
-            var transport = await StartDataAsync("STOR", remotePath, 0, token, restartMarker, rawData: true).ConfigureAwait(false);
+            await ApplyTransferSettingsCoreAsync(_transferSettings with
+            {
+                Structure = FtpFileStructure.Record
+            }, token).ConfigureAwait(false);
+            Stream transport = await StartDataAsync("STOR", remotePath, 0, token, restartMarker, rawData: true).ConfigureAwait(false);
             await FtpDataCodec.WriteRecordsAsync(transport, records, _transferSettings, leaveOpen: true,
                 GetActiveTransferToken(token)).ConfigureAwait(false);
-            await CompleteDataAsync(token).ConfigureAwait(false);
+            _ = await CompleteDataAsync(token).ConfigureAwait(false);
         }, cancellationToken);
     }
 
@@ -49,15 +52,19 @@ public sealed partial class FtpClient
     public Task<IReadOnlyList<byte[]>> DownloadRecordsAsync(string remotePath, string? restartMarker = null,
         int maxRecords = 65536, long maxBytes = 67108864, CancellationToken cancellationToken = default)
     {
-        FtpPath.Validate(remotePath);
-        if (restartMarker is not null) ValidateOpaqueRestartMarker(restartMarker);
+        _ = FtpPath.Validate(remotePath);
+        if (restartMarker is not null)
+            ValidateOpaqueRestartMarker(restartMarker);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxRecords);
         ArgumentOutOfRangeException.ThrowIfNegative(maxBytes);
         return RunAsync(async token =>
         {
-            await ApplyTransferSettingsCoreAsync(_transferSettings with { Structure = FtpFileStructure.Record }, token).ConfigureAwait(false);
-            var transport = await StartDataAsync("RETR", remotePath, 0, token, restartMarker, rawData: true).ConfigureAwait(false);
-            var result = new List<byte[]>();
+            await ApplyTransferSettingsCoreAsync(_transferSettings with
+            {
+                Structure = FtpFileStructure.Record
+            }, token).ConfigureAwait(false);
+            Stream transport = await StartDataAsync("RETR", remotePath, 0, token, restartMarker, rawData: true).ConfigureAwait(false);
+            List<byte[]> result = new();
             long length = 0;
             await foreach (var record in FtpDataCodec.ReadRecordsAsync(transport, _transferSettings, leaveOpen: true,
                 GetActiveTransferToken(token)).ConfigureAwait(false))
@@ -67,7 +74,7 @@ public sealed partial class FtpClient
                 length += record.LongLength;
                 result.Add(record);
             }
-            await CompleteDataAsync(token).ConfigureAwait(false);
+            _ = await CompleteDataAsync(token).ConfigureAwait(false);
             return (IReadOnlyList<byte[]>)result.AsReadOnly();
         }, cancellationToken);
     }
@@ -76,16 +83,20 @@ public sealed partial class FtpClient
     public Task UploadPagesAsync(string remotePath, IEnumerable<FtpPage> pages,
         string? restartMarker = null, CancellationToken cancellationToken = default)
     {
-        FtpPath.Validate(remotePath);
+        _ = FtpPath.Validate(remotePath);
         ArgumentNullException.ThrowIfNull(pages);
-        if (restartMarker is not null) ValidateOpaqueRestartMarker(restartMarker);
+        if (restartMarker is not null)
+            ValidateOpaqueRestartMarker(restartMarker);
         return RunAsync(async token =>
         {
-            await ApplyTransferSettingsCoreAsync(_transferSettings with { Structure = FtpFileStructure.Page }, token).ConfigureAwait(false);
-            var transport = await StartDataAsync("STOR", remotePath, 0, token, restartMarker, rawData: true).ConfigureAwait(false);
+            await ApplyTransferSettingsCoreAsync(_transferSettings with
+            {
+                Structure = FtpFileStructure.Page
+            }, token).ConfigureAwait(false);
+            Stream transport = await StartDataAsync("STOR", remotePath, 0, token, restartMarker, rawData: true).ConfigureAwait(false);
             await FtpDataCodec.WritePagesAsync(transport, pages, _transferSettings, leaveOpen: true,
                 GetActiveTransferToken(token)).ConfigureAwait(false);
-            await CompleteDataAsync(token).ConfigureAwait(false);
+            _ = await CompleteDataAsync(token).ConfigureAwait(false);
         }, cancellationToken);
     }
 
@@ -93,17 +104,21 @@ public sealed partial class FtpClient
     public Task<IReadOnlyList<FtpPage>> DownloadPagesAsync(string remotePath, string? restartMarker = null,
         int maxPages = 1024, long maxLogicalBytes = 1048576, CancellationToken cancellationToken = default)
     {
-        FtpPath.Validate(remotePath);
-        if (restartMarker is not null) ValidateOpaqueRestartMarker(restartMarker);
+        _ = FtpPath.Validate(remotePath);
+        if (restartMarker is not null)
+            ValidateOpaqueRestartMarker(restartMarker);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxPages);
         ArgumentOutOfRangeException.ThrowIfNegative(maxLogicalBytes);
         return RunAsync(async token =>
         {
-            await ApplyTransferSettingsCoreAsync(_transferSettings with { Structure = FtpFileStructure.Page }, token).ConfigureAwait(false);
-            var transport = await StartDataAsync("RETR", remotePath, 0, token, restartMarker, rawData: true).ConfigureAwait(false);
-            var result = new List<FtpPage>();
+            await ApplyTransferSettingsCoreAsync(_transferSettings with
+            {
+                Structure = FtpFileStructure.Page
+            }, token).ConfigureAwait(false);
+            Stream transport = await StartDataAsync("RETR", remotePath, 0, token, restartMarker, rawData: true).ConfigureAwait(false);
+            List<FtpPage> result = new();
             long logicalBytes = 0;
-            await foreach (var page in FtpDataCodec.ReadPagesAsync(transport, _transferSettings, leaveOpen: true,
+            await foreach (FtpPage? page in FtpDataCodec.ReadPagesAsync(transport, _transferSettings, leaveOpen: true,
                 GetActiveTransferToken(token)).ConfigureAwait(false))
             {
                 var count = (long)page.Data.Count + page.HeaderExtensions.Count;
@@ -112,7 +127,7 @@ public sealed partial class FtpClient
                 logicalBytes += count;
                 result.Add(page);
             }
-            await CompleteDataAsync(token).ConfigureAwait(false);
+            _ = await CompleteDataAsync(token).ConfigureAwait(false);
             return (IReadOnlyList<FtpPage>)result.AsReadOnly();
         }, cancellationToken);
     }

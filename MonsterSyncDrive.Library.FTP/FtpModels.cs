@@ -108,67 +108,127 @@ public enum FtpHashAlgorithm
 public sealed record FtpItem
 {
     /// <summary>服务器返回的条目名称；保留空格和 Unicode 字符，不进行 URI 解码。</summary>
-    public required string Name { get; init; }
+    public required string Name
+    {
+        get; init;
+    }
 
     /// <summary>用于后续 FTP 命令的完整远程路径。</summary>
-    public required string FullPath { get; init; }
+    public required string FullPath
+    {
+        get; init;
+    }
 
     /// <summary>文件、目录、链接或未知类型。</summary>
-    public FtpItemType Type { get; init; }
+    public FtpItemType Type
+    {
+        get; init;
+    }
 
     /// <summary>文件大小；服务器未提供或条目不是普通文件时可能为空。</summary>
-    public long? Size { get; init; }
+    public long? Size
+    {
+        get; init;
+    }
 
     /// <summary>RFC 3659 的 UTC 修改时间；传统 LIST 没有时区，见 ListingModifiedTime。</summary>
-    public DateTimeOffset? ModifiedTime { get; init; }
+    public DateTimeOffset? ModifiedTime
+    {
+        get; init;
+    }
 
     /// <summary>create fact 提供的 UTC 创建时间；未提供时为空，不从修改时间猜测。</summary>
-    public DateTimeOffset? CreatedTime { get; init; }
+    public DateTimeOffset? CreatedTime
+    {
+        get; init;
+    }
 
     /// <summary>服务器提供的所有者名称或原始所有者标识，优先使用 UNIX.ownername。</summary>
-    public string? Owner { get; init; }
+    public string? Owner
+    {
+        get; init;
+    }
 
     /// <summary>服务器提供的组名称或原始组标识，优先使用 UNIX.groupname。</summary>
-    public string? Group { get; init; }
+    public string? Group
+    {
+        get; init;
+    }
 
     /// <summary>明确的 UNIX.uid 数字用户标识；不将名称或 UNIX.owner 字符串猜成数字 UID。</summary>
-    public long? UserId { get; init; }
+    public long? UserId
+    {
+        get; init;
+    }
 
     /// <summary>明确的 UNIX.gid 数字组标识。</summary>
-    public long? GroupId { get; init; }
+    public long? GroupId
+    {
+        get; init;
+    }
 
     /// <summary>UNIX.nlink 提供的非负硬链接数量。</summary>
-    public long? LinkCount { get; init; }
+    public long? LinkCount
+    {
+        get; init;
+    }
 
     /// <summary>unique fact 的不透明服务器标识，保持原始大小写，仅在服务器规定的范围内有意义。</summary>
-    public string? UniqueId { get; init; }
+    public string? UniqueId
+    {
+        get; init;
+    }
 
     /// <summary>perm fact 表示的当前用户操作权限；未公布时为空，明确空权限时为 None。</summary>
-    public FtpPermissions? AllowedOperations { get; init; }
+    public FtpPermissions? AllowedOperations
+    {
+        get; init;
+    }
 
     /// <summary>charset fact 提供的文件内容字符集，不影响控制通道编码。</summary>
-    public string? CharacterSet { get; init; }
+    public string? CharacterSet
+    {
+        get; init;
+    }
 
     /// <summary>lang fact 提供的内容语言标记，不是当前控制回复语言。</summary>
-    public string? Language { get; init; }
+    public string? Language
+    {
+        get; init;
+    }
 
     /// <summary>media-type fact 提供的媒体类型，保持服务器原值。</summary>
-    public string? MediaType { get; init; }
+    public string? MediaType
+    {
+        get; init;
+    }
 
     /// <summary>传统 LIST 的服务器本地时间，Kind 为 Unspecified；不会伪装成准确 UTC 时间。</summary>
-    public DateTime? ListingModifiedTime { get; init; }
+    public DateTime? ListingModifiedTime
+    {
+        get; init;
+    }
 
     /// <summary>服务器返回的 UNIX 权限（例如 0755）或 LIST 权限字符串。</summary>
-    public string? Permissions { get; init; }
+    public string? Permissions
+    {
+        get; init;
+    }
 
     /// <summary>LIST 提供的符号链接目标；不会自动跟随。</summary>
-    public string? LinkTarget { get; init; }
+    public string? LinkTarget
+    {
+        get; init;
+    }
 
     /// <summary>原始目录行，用于故障诊断或处理服务器特有扩展。</summary>
     public string RawListing { get; init; } = string.Empty;
 
     /// <summary>大小写不敏感的 MLST/MLSD facts，包括未知扩展；字典只读。</summary>
-    public IReadOnlyDictionary<string, string> Facts { get; init; } =
+    public IReadOnlyDictionary<string, string> Facts
+    {
+        get; init;
+    } =
         new ReadOnlyDictionary<string, string>(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
 }
 
@@ -176,19 +236,34 @@ public sealed record FtpItem
 public sealed record FtpTransferProgress
 {
     /// <summary>传输使用的远程路径。</summary>
-    public required string RemotePath { get; init; }
+    public required string RemotePath
+    {
+        get; init;
+    }
 
     /// <summary>本次传输已复制的字节数，不包含断点之前的数据。</summary>
-    public long BytesTransferred { get; init; }
+    public long BytesTransferred
+    {
+        get; init;
+    }
 
     /// <summary>文件断点偏移量。</summary>
-    public long RestartOffset { get; init; }
+    public long RestartOffset
+    {
+        get; init;
+    }
 
     /// <summary>完整文件大小；服务器或源流无法确定时为空。</summary>
-    public long? TotalBytes { get; init; }
+    public long? TotalBytes
+    {
+        get; init;
+    }
 
     /// <summary>本次传输耗时。</summary>
-    public TimeSpan Elapsed { get; init; }
+    public TimeSpan Elapsed
+    {
+        get; init;
+    }
 
     /// <summary>平均字节/秒；开始传输时为零。</summary>
     public double BytesPerSecond => Elapsed.TotalSeconds > 0 ? BytesTransferred / Elapsed.TotalSeconds : 0;
@@ -202,8 +277,14 @@ public sealed record FtpTransferProgress
 public sealed record FtpChecksum
 {
     /// <summary>摘要算法。</summary>
-    public required FtpHashAlgorithm Algorithm { get; init; }
+    public required FtpHashAlgorithm Algorithm
+    {
+        get; init;
+    }
 
     /// <summary>规范化为小写的十六进制摘要。</summary>
-    public required string Value { get; init; }
+    public required string Value
+    {
+        get; init;
+    }
 }

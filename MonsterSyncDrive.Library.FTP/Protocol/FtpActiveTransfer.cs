@@ -61,9 +61,6 @@ internal sealed class FtpActiveTransfer : IDisposable
     /// <summary>已经启动的唯一持有者释放任务，处理注册与ABOR完成的并发竞态。</summary>
     private Task? _ownerReleaseTask;
 
-    /// <summary>是否已经接受数据命令。</summary>
-    private bool _started;
-
     /// <summary>是否已结束数据事务或准备失败。</summary>
     private bool _terminal;
 
@@ -73,18 +70,14 @@ internal sealed class FtpActiveTransfer : IDisposable
     /// <summary>是否已有普通数据完成读取者持有控制锁。</summary>
     private bool _completionReaderActive;
 
-    /// <summary>中止请求是否已交给该完成读取者处理，避免两个读取者竞争同一控制流。</summary>
-    private bool _readerOwnsAbort;
-
-    /// <summary>唯一ABOR所有者选择的Telnet选项。</summary>
-    private FtpAbortOptions _abortOptions = new();
-
     /// <summary>防止重复释放取消源。</summary>
     private int _disposed;
 
     /// <summary>创建独立数据取消标记，并绑定外层操作的取消。</summary>
-    internal FtpActiveTransfer(CancellationToken operationToken) =>
+    internal FtpActiveTransfer(CancellationToken operationToken)
+    {
         _dataCancellation = CancellationTokenSource.CreateLinkedTokenSource(operationToken);
+    }
 
     /// <summary>用于主动 accept、数据 TLS 及读写的取消标记。</summary>
     internal CancellationToken Token => _dataCancellation.Token;
@@ -102,38 +95,98 @@ internal sealed class FtpActiveTransfer : IDisposable
     internal Task CompletionReaderBegan => _completionReaderBegan.Task;
 
     /// <summary>当前存在待处理STAT查询的信号。</summary>
-    internal Task StatusRequestedSignal { get { lock (_sync) return _statusRequested.Task; } }
+    internal Task StatusRequestedSignal
+    {
+        get
+        {
+            lock (_sync)
+                return _statusRequested.Task;
+        }
+    }
 
     /// <summary>中止请求是否由已有控制完成读取者执行。</summary>
-    internal bool ReaderOwnsAbort { get { lock (_sync) return _readerOwnsAbort; } }
+    internal bool ReaderOwnsAbort
+    {
+        get
+        {
+            lock (_sync)
+                return field;
+        }
+
+        private set;
+    }
 
     /// <summary>完成读取者是否已取得控制锁。</summary>
-    internal bool CompletionReaderActive { get { lock (_sync) return _completionReaderActive; } }
+    internal bool CompletionReaderActive
+    {
+        get
+        {
+            lock (_sync)
+                return _completionReaderActive;
+        }
+    }
 
     /// <summary>中止事务已经选定的控制发送选项。</summary>
-    internal FtpAbortOptions AbortOptions { get { lock (_sync) return _abortOptions; } }
+    internal FtpAbortOptions AbortOptions
+    {
+        get
+        {
+            lock (_sync)
+                return field;
+        }
+
+        private set;
+    } = new();
 
     /// <summary>数据命令是否已被服务器接受。</summary>
-    internal bool Started { get { lock (_sync) return _started; } }
+    internal bool Started
+    {
+        get
+        {
+            lock (_sync)
+                return field;
+        }
+
+        private set;
+    }
 
     /// <summary>此事务是否已经请求显式中止。</summary>
-    internal bool AbortRequested { get { lock (_sync) return _abortRequested; } }
+    internal bool AbortRequested
+    {
+        get
+        {
+            lock (_sync)
+                return _abortRequested;
+        }
+    }
 
     /// <summary>此事务是否由需要主动归还会话锁的远程流持有。</summary>
-    internal bool HasReleaseOwner { get { lock (_sync) return _releaseOwner is not null; } }
+    internal bool HasReleaseOwner
+    {
+        get
+        {
+            lock (_sync)
+                return _releaseOwner is not null;
+        }
+    }
 
     /// <summary>数据命令收到 125/150 后完成准备阶段。</summary>
     internal void MarkReady()
     {
-        lock (_sync) { if (!_terminal) _started = true; }
-        _ready.TrySetResult();
+        lock (_sync)
+        {
+            if (!_terminal)
+                Started = true;
+        }
+        _ = _ready.TrySetResult();
     }
 
     /// <summary>准备失败时唤醒等待者；未开始的数据命令不能让 ABOR 抢占其兼容回退命令。</summary>
     internal void FailPreparation()
     {
-        lock (_sync) _terminal = true;
-        _ready.TrySetResult();
+        lock (_sync)
+            _terminal = true;
+        _ = _ready.TrySetResult();
     }
 
     /// <summary>在尚未正常结束时取得唯一中止权；并发 ABOR 共享同一结果。</summary>
@@ -141,13 +194,15 @@ internal sealed class FtpActiveTransfer : IDisposable
     {
         lock (_sync)
         {
-            if (_terminal && !_abortRequested) return false;
-            if (_abortRequested) return false;
+            if (_terminal && !_abortRequested)
+                return false;
+            if (_abortRequested)
+                return false;
             _abortRequested = true;
-            _readerOwnsAbort = _completionReaderActive;
-            _abortOptions = options;
+            ReaderOwnsAbort = _completionReaderActive;
+            AbortOptions = options;
         }
-        _abortRequestedSignal.TrySetResult();
+        _ = _abortRequestedSignal.TrySetResult();
         return true;
     }
 
@@ -156,30 +211,36 @@ internal sealed class FtpActiveTransfer : IDisposable
     {
         lock (_sync)
         {
-            if (_abortRequested || _terminal) return false;
+            if (_abortRequested || _terminal)
+                return false;
             _completionReaderActive = true;
         }
-        _completionReaderBegan.TrySetResult();
+        _ = _completionReaderBegan.TrySetResult();
         return true;
     }
 
     /// <summary>普通完成读取者离开控制锁之前清除所有权。</summary>
     internal void LeaveCompletionReader()
     {
-        lock (_sync) _completionReaderActive = false;
+        lock (_sync)
+            _completionReaderActive = false;
     }
 
     /// <summary>取消数据 I/O；必须在服务器已接受数据命令后才调用。</summary>
     internal void CancelData()
     {
-        try { _dataCancellation.Cancel(); }
+        try
+        {
+            _dataCancellation.Cancel();
+        }
         catch (ObjectDisposedException) { /* 正常完成与 ABOR 竞态时取消源可能已经释放。 */ }
     }
 
     /// <summary>缓存由控制侧命令提前读取的数据完成回复。</summary>
     internal void QueueCompletion(FtpReply reply)
     {
-        lock (_sync) _completionReplies.Enqueue(reply);
+        lock (_sync)
+            _completionReplies.Enqueue(reply);
     }
 
     /// <summary>取出一条缓存的完成回复，保持服务器顺序。</summary>
@@ -187,7 +248,11 @@ internal sealed class FtpActiveTransfer : IDisposable
     {
         lock (_sync)
         {
-            if (_completionReplies.TryDequeue(out var value)) { reply = value; return true; }
+            if (_completionReplies.TryDequeue(out FtpReply? value))
+            {
+                reply = value;
+                return true;
+            }
             reply = null;
             return false;
         }
@@ -199,7 +264,8 @@ internal sealed class FtpActiveTransfer : IDisposable
         lock (_sync)
         {
             pendingStatuses = Array.Empty<FtpTransferStatusRequest>();
-            if (_abortRequested) return false;
+            if (_abortRequested)
+                return false;
             _terminal = true;
             pendingStatuses = _statusRequests.ToArray();
             _statusRequests.Clear();
@@ -213,11 +279,13 @@ internal sealed class FtpActiveTransfer : IDisposable
         lock (_sync)
         {
             request = null;
-            if (!_completionReaderActive || _terminal || _abortRequested) return false;
-            if (_statusRequests.Count >= 64) throw new InvalidOperationException("同一传输最多排队64个STAT查询。");
+            if (!_completionReaderActive || _terminal || _abortRequested)
+                return false;
+            if (_statusRequests.Count >= 64)
+                throw new InvalidOperationException("同一传输最多排队64个STAT查询。");
             request = new FtpTransferStatusRequest(path);
             _statusRequests.Enqueue(request);
-            _statusRequested.TrySetResult();
+            _ = _statusRequested.TrySetResult();
             return true;
         }
     }
@@ -227,8 +295,10 @@ internal sealed class FtpActiveTransfer : IDisposable
     {
         lock (_sync)
         {
-            if (!_statusRequests.TryDequeue(out request)) return false;
-            if (_statusRequests.Count == 0) _statusRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            if (!_statusRequests.TryDequeue(out request))
+                return false;
+            if (_statusRequests.Count == 0)
+                _statusRequested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             return true;
         }
     }
@@ -247,12 +317,13 @@ internal sealed class FtpActiveTransfer : IDisposable
     /// <summary>先公布同步成功，再让独占流归还会话锁；复制事务会在取消后自行归还。</summary>
     internal async Task CompleteAbortAsync(FtpAbortResult result, bool releaseOwner = true)
     {
-        _abort.TrySetResult(result);
+        _ = _abort.TrySetResult(result);
         Task release;
         lock (_sync)
         {
             _terminal = true;
-            while (_statusRequests.TryDequeue(out var status)) status.Cancel();
+            while (_statusRequests.TryDequeue(out FtpTransferStatusRequest? status))
+                status.Cancel();
             release = !releaseOwner || _releaseOwner is null ? Task.CompletedTask : _ownerReleaseTask ??= ReleaseOwnerAsync(_releaseOwner);
         }
         await release.ConfigureAwait(false);
@@ -271,10 +342,11 @@ internal sealed class FtpActiveTransfer : IDisposable
         lock (_sync)
         {
             _terminal = true;
-            while (_statusRequests.TryDequeue(out var status)) status.Fail(exception);
+            while (_statusRequests.TryDequeue(out FtpTransferStatusRequest? status))
+                status.Fail(exception);
         }
-        _abort.TrySetException(exception);
-        _ready.TrySetResult();
+        _ = _abort.TrySetException(exception);
+        _ = _ready.TrySetResult();
     }
 
     /// <summary>连接被外部关闭时取消 I/O 并唤醒所有等待者。</summary>
@@ -283,18 +355,19 @@ internal sealed class FtpActiveTransfer : IDisposable
         lock (_sync)
         {
             _terminal = true;
-            while (_statusRequests.TryDequeue(out var status)) status.Cancel();
+            while (_statusRequests.TryDequeue(out FtpTransferStatusRequest? status))
+                status.Cancel();
         }
         CancelData();
-        _ready.TrySetResult();
-        if (AbortRequested) _abort.TrySetException(new IOException("FTP 控制会话在 ABOR 完成前关闭。"));
-        else _abort.TrySetCanceled();
+        _ = _ready.TrySetResult();
+        _ = AbortRequested ? _abort.TrySetException(new IOException("FTP 控制会话在 ABOR 完成前关闭。")) : _abort.TrySetCanceled();
     }
 
     /// <summary>释放本事务拥有的取消注册，不释放客户端的控制锁或会话锁。</summary>
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) == 0) _dataCancellation.Dispose();
+        if (Interlocked.Exchange(ref _disposed, 1) == 0)
+            _dataCancellation.Dispose();
     }
 }
 
@@ -305,20 +378,35 @@ internal sealed class FtpTransferStatusRequest
     private readonly TaskCompletionSource<FtpReply> _reply = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>创建一次可选路径的STAT请求。</summary>
-    internal FtpTransferStatusRequest(string? path) => Path = path;
+    internal FtpTransferStatusRequest(string? path)
+    {
+        Path = path;
+    }
 
     /// <summary>查询路径；为空表示整个会话的状态。</summary>
-    internal string? Path { get; }
+    internal string? Path
+    {
+        get;
+    }
 
     /// <summary>由唯一控制读取者提供的结果任务。</summary>
     internal Task<FtpReply> Reply => _reply.Task;
 
     /// <summary>公布完整的STAT最终回复。</summary>
-    internal void Complete(FtpReply reply) => _reply.TrySetResult(reply);
+    internal void Complete(FtpReply reply)
+    {
+        _ = _reply.TrySetResult(reply);
+    }
 
     /// <summary>公布控制事务错误。</summary>
-    internal void Fail(Exception exception) => _reply.TrySetException(exception);
+    internal void Fail(Exception exception)
+    {
+        _ = _reply.TrySetException(exception);
+    }
 
     /// <summary>传输或连接已结束时取消尚未发出的查询。</summary>
-    internal void Cancel() => _reply.TrySetCanceled();
+    internal void Cancel()
+    {
+        _ = _reply.TrySetCanceled();
+    }
 }

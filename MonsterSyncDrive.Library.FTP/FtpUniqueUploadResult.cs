@@ -26,14 +26,26 @@ namespace MonsterSyncDrive.Library.FTP;
 public sealed record FtpUniqueUploadResult
 {
     /// <summary>服务器原样返回的唯一文件名或路径，不执行 URI 解码。</summary>
-    public required string RemotePath { get; init; }
+    public required string RemotePath
+    {
+        get; init;
+    }
 
     /// <summary>本次从调用者源流读取的字节数。</summary>
-    public long BytesTransferred { get; init; }
+    public long BytesTransferred
+    {
+        get; init;
+    }
 
     /// <summary>包含服务器选择名称的预备回复。</summary>
-    public required FtpReply PreliminaryReply { get; init; }
+    public required FtpReply PreliminaryReply
+    {
+        get; init;
+    }
 
     /// <summary>传输最终成功回复。</summary>
-    public required FtpReply CompletionReply { get; init; }
+    public required FtpReply CompletionReply
+    {
+        get; init;
+    }
 }

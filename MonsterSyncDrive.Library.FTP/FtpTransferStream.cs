@@ -105,13 +105,19 @@ public sealed class FtpTransferStream : Stream
     /// <summary>显式中断数据流，通过 ABOR 同步完成回复并保留控制会话；重复中止不会重复归还锁。</summary>
     public async Task AbortAsync()
     {
-        if (Volatile.Read(ref _closed) != 0) return;
-        if (_abort is not null) await _abort().ConfigureAwait(false);
-        else await FinishAsync(false).ConfigureAwait(false);
+        if (Volatile.Read(ref _closed) != 0)
+            return;
+        if (_abort is not null)
+            _ = await _abort().ConfigureAwait(false);
+        else
+            await FinishAsync(false).ConfigureAwait(false);
     }
 
     /// <summary>供客户端已完成 ABOR 的释放回调使用，不再递归发送另一个 ABOR。</summary>
-    internal Task ReleaseAfterAbortAsync() => FinishAsync(false);
+    internal Task ReleaseAfterAbortAsync()
+    {
+        return FinishAsync(false);
+    }
 
     /// <summary>在块/压缩模式上传流中插入一个可恢复检查点，服务器可用 110 回复返回对应标记。</summary>
     public async Task WriteRestartMarkerAsync(string marker, CancellationToken cancellationToken = default)
@@ -119,7 +125,7 @@ public sealed class FtpTransferStream : Stream
         EnsureOpen();
         if (_readable || _stream is not FtpDataWriteStream writer)
             throw new NotSupportedException("只有编码后的上传数据流可以写入检查点。");
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(_sessionToken, cancellationToken);
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(_sessionToken, cancellationToken);
         try
         {
             await FtpTimeout.RunAsync(token => writer.WriteRestartMarkerAsync(marker, token),
@@ -127,7 +133,7 @@ public sealed class FtpTransferStream : Stream
         }
         catch (Exception exception)
         {
-            var normalized = await NormalizeAfterErrorAsync(exception).ConfigureAwait(false);
+            Exception normalized = await NormalizeAfterErrorAsync(exception).ConfigureAwait(false);
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(normalized).Throw();
         }
     }
@@ -138,21 +144,31 @@ public sealed class FtpTransferStream : Stream
     /// <summary>异步读取。EOF 时先校验服务器最终回复；失败不会被伪装为正常 EOF。</summary>
     public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
     {
-        if (!_readable) throw new NotSupportedException("此 FTP 流只允许写入。");
-        if (_eof) { await FinishAsync(true).ConfigureAwait(false); return 0; }
+        if (!_readable)
+            throw new NotSupportedException("此 FTP 流只允许写入。");
+        if (_eof)
+        {
+            await FinishAsync(true).ConfigureAwait(false);
+            return 0;
+        }
         EnsureOpen();
-        if (buffer.Length == 0) return 0;
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(_sessionToken, cancellationToken);
+        if (buffer.Length == 0)
+            return 0;
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(_sessionToken, cancellationToken);
         try
         {
             var read = await FtpTimeout.RunAsync(token => _stream.ReadAsync(buffer, token).AsTask(),
                 _timeout, linked.Token, "数据流读取").ConfigureAwait(false);
-            if (read == 0) { _eof = true; await FinishAsync(true).ConfigureAwait(false); }
+            if (read == 0)
+            {
+                _eof = true;
+                await FinishAsync(true).ConfigureAwait(false);
+            }
             return read;
         }
         catch (Exception exception)
         {
-            var normalized = await NormalizeAfterErrorAsync(exception).ConfigureAwait(false);
+            Exception normalized = await NormalizeAfterErrorAsync(exception).ConfigureAwait(false);
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(normalized).Throw();
             throw;
         }
@@ -161,9 +177,10 @@ public sealed class FtpTransferStream : Stream
     /// <summary>异步写入，超时、取消或底层错误时中断会话。</summary>
     public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
     {
-        if (_readable) throw new NotSupportedException("此 FTP 流只允许读取。");
+        if (_readable)
+            throw new NotSupportedException("此 FTP 流只允许读取。");
         EnsureOpen();
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(_sessionToken, cancellationToken);
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(_sessionToken, cancellationToken);
         try
         {
             await FtpTimeout.RunAsync(token => _stream.WriteAsync(buffer, token).AsTask(), _timeout, linked.Token, "数据流写入")
@@ -171,7 +188,7 @@ public sealed class FtpTransferStream : Stream
         }
         catch (Exception exception)
         {
-            var normalized = await NormalizeAfterErrorAsync(exception).ConfigureAwait(false);
+            Exception normalized = await NormalizeAfterErrorAsync(exception).ConfigureAwait(false);
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(normalized).Throw();
             throw;
         }
@@ -181,50 +198,70 @@ public sealed class FtpTransferStream : Stream
     public override async Task FlushAsync(CancellationToken cancellationToken)
     {
         EnsureOpen();
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(_sessionToken, cancellationToken);
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(_sessionToken, cancellationToken);
         try
         {
-            await FtpTimeout.RunAsync(token => _stream.FlushAsync(token), _timeout, linked.Token, "数据流刷新").ConfigureAwait(false);
+            await FtpTimeout.RunAsync(_stream.FlushAsync, _timeout, linked.Token, "数据流刷新").ConfigureAwait(false);
         }
         catch (Exception exception)
         {
-            var normalized = await NormalizeAfterErrorAsync(exception).ConfigureAwait(false);
+            Exception normalized = await NormalizeAfterErrorAsync(exception).ConfigureAwait(false);
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(normalized).Throw();
             throw;
         }
     }
 
     /// <summary>兼容同步 Stream 调用；异步实现不捕获同步上下文。</summary>
-    public override int Read(byte[] buffer, int offset, int count) =>
-        ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        return ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+    }
 
     /// <summary>兼容旧式数组异步读取入口。</summary>
-    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-        ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        return ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+    }
 
     /// <summary>兼容同步上传入口。</summary>
-    public override void Write(byte[] buffer, int offset, int count) =>
+    public override void Write(byte[] buffer, int offset, int count)
+    {
         WriteAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+    }
 
     /// <summary>兼容旧式数组异步写入入口。</summary>
-    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-        WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+    public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+    {
+        return WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+    }
 
     /// <summary>同步刷新，不触发传输完成。</summary>
-    public override void Flush() => FlushAsync(CancellationToken.None).GetAwaiter().GetResult();
+    public override void Flush()
+    {
+        FlushAsync(CancellationToken.None).GetAwaiter().GetResult();
+    }
 
     /// <summary>不支持 Seek，FTP 断点只能在打开数据连接前通过 REST 设置。</summary>
-    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException("FTP 数据流不支持 Seek。");
+    public override long Seek(long offset, SeekOrigin origin)
+    {
+        throw new NotSupportedException("FTP 数据流不支持 Seek。");
+    }
 
     /// <summary>不支持 SetLength，覆盖由 STOR 命令控制。</summary>
-    public override void SetLength(long value) => throw new NotSupportedException("FTP 数据流不支持 SetLength。");
+    public override void SetLength(long value)
+    {
+        throw new NotSupportedException("FTP 数据流不支持 SetLength。");
+    }
 
     /// <summary>同步释放并校验上传最终回复；下载提前关闭则中断会话。</summary>
     protected override void Dispose(bool disposing)
     {
         if (disposing)
         {
-            try { FinishAsync(!_readable || _eof).GetAwaiter().GetResult(); }
+            try
+            {
+                FinishAsync(!_readable || _eof).GetAwaiter().GetResult();
+            }
             catch (FtpTransferAbortedException) { /* 已通过显式 ABOR 确认并释放，重复释放不重报中止。 */ }
         }
         base.Dispose(disposing);
@@ -233,13 +270,22 @@ public sealed class FtpTransferStream : Stream
     /// <summary>异步释放。上传结束错误通过此入口传播，调用者应优先使用 await using。</summary>
     public override async ValueTask DisposeAsync()
     {
-        try { await FinishAsync(!_readable || _eof).ConfigureAwait(false); }
+        try
+        {
+            await FinishAsync(!_readable || _eof).ConfigureAwait(false);
+        }
         catch (FtpTransferAbortedException) { /* 中止状态由数据操作或 AbortAsync 的结果报告。 */ }
-        finally { GC.SuppressFinalize(this); }
+        finally
+        {
+            GC.SuppressFinalize(this);
+        }
     }
 
     /// <summary>验证流尚未完成；完成后的写操作一律拒绝。</summary>
-    private void EnsureOpen() => ObjectDisposedException.ThrowIf(Volatile.Read(ref _closed) != 0, this);
+    private void EnsureOpen()
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _closed) != 0, this);
+    }
 
     /// <summary>只启动一次完成事务；之后所有完成/释放调用观察同一个任务。</summary>
     private Task FinishAsync(bool success)
@@ -254,8 +300,14 @@ public sealed class FtpTransferStream : Stream
     /// <summary>出现 I/O 错误时保留原始异常；已观察到的完成错误不会被第二次清理异常覆盖。</summary>
     private async Task<Exception> NormalizeAfterErrorAsync(Exception exception)
     {
-        try { await FinishAsync(false).ConfigureAwait(false); }
-        catch (FtpTransferAbortedException aborted) { return aborted; }
+        try
+        {
+            await FinishAsync(false).ConfigureAwait(false);
+        }
+        catch (FtpTransferAbortedException aborted)
+        {
+            return aborted;
+        }
         catch (Exception) { /* 原始 I/O 或最终回复异常由外层重新抛出。 */ }
         return exception;
     }

@@ -35,7 +35,7 @@ public static class FtpPath
     /// <summary>合并目录与单个子项名称。拒绝目录穿越、斜杠和点目录。</summary>
     public static string Combine(string directory, string name)
     {
-        Validate(directory);
+        _ = Validate(directory);
         ValidateChildName(name);
         return directory.TrimEnd('/') + "/" + name;
     }
@@ -43,18 +43,19 @@ public static class FtpPath
     /// <summary>取得最后一个路径段；根目录返回空字符串。</summary>
     public static string GetFileName(string path)
     {
-        Validate(path);
-        var trimmed = path.TrimEnd('/');
+        _ = Validate(path);
+        string trimmed = path.TrimEnd('/');
         return trimmed[(trimmed.LastIndexOf('/') + 1)..];
     }
 
     /// <summary>取得父目录；无目录前缀时返回点目录，绝对根路径返回根目录。</summary>
     public static string GetDirectoryName(string path)
     {
-        Validate(path);
-        var trimmed = path.TrimEnd('/');
-        if (trimmed.Length == 0) return "/";
-        var slash = trimmed.LastIndexOf('/');
+        _ = Validate(path);
+        string trimmed = path.TrimEnd('/');
+        if (trimmed.Length == 0)
+            return "/";
+        int slash = trimmed.LastIndexOf('/');
         return slash < 0 ? "." : slash == 0 ? "/" : trimmed[..slash];
     }
 
@@ -70,10 +71,11 @@ public static class FtpPath
     internal static void ValidateArgument(string value, string name, bool allowEmpty = false)
     {
         ArgumentNullException.ThrowIfNull(value, name);
-        if (!allowEmpty && value.Length == 0) throw new ArgumentException("FTP 参数不可为空。", name);
-        foreach (var character in value)
+        if (!allowEmpty && value.Length == 0)
+            throw new ArgumentException("FTP 参数不可为空。", name);
+        foreach (char character in value)
         {
-            if (character < ' ' || character == '\u007f')
+            if (character is < ' ' or '\u007f')
                 throw new ArgumentException("FTP 参数不可包含控制字符。", name);
         }
     }
@@ -81,8 +83,8 @@ public static class FtpPath
     /// <summary>阻止根目录和含点目录段的递归删除，避免服务器对别名路径的特殊解释。</summary>
     internal static void ValidateRecursiveTarget(string path)
     {
-        Validate(path);
-        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        _ = Validate(path);
+        string[] parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0 || parts.Any(static part => part is "." or "..") || path.Contains('\\'))
             throw new ArgumentException("递归操作必须指向明确的非根目录，且不可包含点目录或反斜杠。", nameof(path));
     }

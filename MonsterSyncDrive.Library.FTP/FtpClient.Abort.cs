@@ -20,11 +20,10 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-using MonsterSyncDrive.Library.FTP;
 using MonsterSyncDrive.Library.FTP.Protocol;
 using System.Net.Sockets;
 
-namespace MonsterSyncDrive.FTP;
+namespace MonsterSyncDrive.Library.FTP;
 
 /// <summary>数据传输期间的控制命令协调及不会丢失回复的 ABOR 事务。</summary>
 public sealed partial class FtpClient
@@ -44,12 +43,18 @@ public sealed partial class FtpClient
     /// <summary>供无反射并发测试确定唯一完成读取者已进入等待阶段。</summary>
     internal bool IsAwaitingTransferCompletion
     {
-        get { lock (_transferStateLock) return _activeTransfer?.CompletionReaderActive == true; }
+        get
+        {
+            lock (_transferStateLock)
+                return _activeTransfer?.CompletionReaderActive == true;
+        }
     }
 
     /// <summary>使用带内 ABOR 中止数据操作并保留控制会话；并发调用共享同一次中止结果。</summary>
-    public Task<FtpAbortResult> AbortAsync(CancellationToken cancellationToken = default) =>
-        AbortAsync(new FtpAbortOptions(), cancellationToken);
+    public Task<FtpAbortResult> AbortAsync(CancellationToken cancellationToken = default)
+    {
+        return AbortAsync(new FtpAbortOptions(), cancellationToken);
+    }
 
     /// <summary>
     /// 执行可选 Telnet IP/SYNCH 的 ABOR。只有确认完整消费数据结束、ABOR 和内部 NOOP 的回复后才返回。
@@ -59,12 +64,13 @@ public sealed partial class FtpClient
     {
         ArgumentNullException.ThrowIfNull(options);
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        if (!IsConnected) throw new InvalidOperationException("请先登录 FTP 会话。");
+        if (!IsConnected)
+            throw new InvalidOperationException("请先登录 FTP 会话。");
         if (options.SendTelnetInterrupt && (_controlStream is not NetworkStream || _securityMechanism is not null))
             throw new InvalidOperationException("Telnet IP/SYNCH 只能用于没有 TLS 或 RFC 2228 命令保护的明文连接。");
 
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
-        var (transfer, ownsSession) = await AcquireTransferControlTargetAsync(linked.Token).ConfigureAwait(false);
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
+        (FtpActiveTransfer? transfer, bool ownsSession) = await AcquireTransferControlTargetAsync(linked.Token).ConfigureAwait(false);
         var ownsControl = false;
         var ownsAbort = false;
         try
@@ -94,10 +100,11 @@ public sealed partial class FtpClient
 
             await _controlGate.WaitAsync(linked.Token).ConfigureAwait(false);
             ownsControl = true;
-            var replies = await FtpTimeout.RunAsync(async token =>
+            IReadOnlyList<FtpReply> replies = await FtpTimeout.RunAsync(async token =>
             {
-                var channel = _channel ?? throw new ObjectDisposedException(nameof(FtpClient));
-                if (options.SendTelnetInterrupt) await SendTelnetInterruptAsync(token).ConfigureAwait(false);
+                FtpControlChannel channel = _channel ?? throw new ObjectDisposedException(nameof(FtpClient));
+                if (options.SendTelnetInterrupt)
+                    await SendTelnetInterruptAsync(token).ConfigureAwait(false);
                 await SendSecuredCommandAsync(channel, "ABOR", null, token).ConfigureAwait(false);
                 if (transfer is not null)
                 {
@@ -110,20 +117,22 @@ public sealed partial class FtpClient
                 return await DrainControlBarrierAsync(channel, transfer, "ABOR", token).ConfigureAwait(false);
             }, _options.CommandTimeout, linked.Token, "ABOR 同步").ConfigureAwait(false);
 
-            var rejected = replies.FirstOrDefault(static reply => reply.IsError && reply.Code != 426);
-            if (rejected is not null) throw new FtpCommandException("ABOR", rejected);
+            FtpReply? rejected = replies.FirstOrDefault(static reply => reply.IsError && reply.Code != 426);
+            if (rejected is not null)
+                throw new FtpCommandException("ABOR", rejected);
             if (!replies.Any(static reply => reply.Code is 225 or 226))
                 throw new FtpProtocolException("ABOR 没有返回 225/226 完成回复。");
             _pendingSequence = false;
-            var result = new FtpAbortResult(transfer is not null, options.SendTelnetInterrupt, replies);
+            FtpAbortResult result = new(transfer is not null, options.SendTelnetInterrupt, replies);
 
             // 公布 ABOR 同步成功后再释放控制锁。流释放回调会归还会话锁，不能在控制锁内反向等待它。
-            _controlGate.Release();
+            _ = _controlGate.Release();
             ownsControl = false;
             if (transfer is not null)
             {
                 await transfer.CompleteAbortAsync(result).ConfigureAwait(false);
-                if (transfer.HasReleaseOwner) DetachActiveTransfer(transfer);
+                if (transfer.HasReleaseOwner)
+                    DetachActiveTransfer(transfer);
             }
             return result;
         }
@@ -138,8 +147,10 @@ public sealed partial class FtpClient
         }
         finally
         {
-            if (ownsControl) _controlGate.Release();
-            if (ownsSession) _sessionGate.Release();
+            if (ownsControl)
+                _ = _controlGate.Release();
+            if (ownsSession)
+                _ = _sessionGate.Release();
         }
     }
 
@@ -149,11 +160,13 @@ public sealed partial class FtpClient
     /// </summary>
     public async Task<FtpReply> GetTransferStatusAsync(string? path = null, CancellationToken cancellationToken = default)
     {
-        if (path is not null) FtpPath.Validate(path);
+        if (path is not null)
+            _ = FtpPath.Validate(path);
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-        if (!IsConnected) throw new InvalidOperationException("请先登录 FTP 会话。");
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
-        var (transfer, ownsSession) = await AcquireTransferControlTargetAsync(linked.Token).ConfigureAwait(false);
+        if (!IsConnected)
+            throw new InvalidOperationException("请先登录 FTP 会话。");
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
+        (FtpActiveTransfer? transfer, bool ownsSession) = await AcquireTransferControlTargetAsync(linked.Token).ConfigureAwait(false);
         var ownsControl = false;
         var statusSent = false;
         try
@@ -161,20 +174,25 @@ public sealed partial class FtpClient
             while (transfer is not null)
             {
                 await transfer.Ready.WaitAsync(linked.Token).ConfigureAwait(false);
-                if (transfer.Started) break;
+                if (transfer.Started)
+                    break;
                 // 准备失败的旧事务不可代表紧接着开始的MLSD→LIST回退；重新选择目标及其会话锁所有权。
                 await Task.Yield();
                 (transfer, ownsSession) = await AcquireTransferControlTargetAsync(linked.Token).ConfigureAwait(false);
             }
-            if (transfer is not null && transfer.TryQueueStatus(path, out var queued))
+            if (transfer is not null && transfer.TryQueueStatus(path, out FtpTransferStatusRequest? queued))
                 return await queued!.Reply.WaitAsync(linked.Token).ConfigureAwait(false);
             if (transfer is not null && !transfer.CompletionReaderBegan.IsCompleted)
             {
-                using var race = CancellationTokenSource.CreateLinkedTokenSource(linked.Token);
-                var control = _controlGate.WaitAsync(race.Token);
-                await Task.WhenAny(control, transfer.CompletionReaderBegan.WaitAsync(race.Token)).ConfigureAwait(false);
+                using CancellationTokenSource race = CancellationTokenSource.CreateLinkedTokenSource(linked.Token);
+                Task control = _controlGate.WaitAsync(race.Token);
+                _ = await Task.WhenAny(control, transfer.CompletionReaderBegan.WaitAsync(race.Token)).ConfigureAwait(false);
                 race.Cancel();
-                try { await control.ConfigureAwait(false); ownsControl = true; }
+                try
+                {
+                    await control.ConfigureAwait(false);
+                    ownsControl = true;
+                }
                 catch (OperationCanceledException) { }
                 linked.Token.ThrowIfCancellationRequested();
                 if (!ownsControl && transfer.TryQueueStatus(path, out queued))
@@ -187,36 +205,47 @@ public sealed partial class FtpClient
             }
             return await FtpTimeout.RunAsync(async token =>
             {
-                var channel = _channel ?? throw new ObjectDisposedException(nameof(FtpClient));
+                FtpControlChannel channel = _channel ?? throw new ObjectDisposedException(nameof(FtpClient));
                 statusSent = true;
                 await SendSecuredCommandAsync(channel, "STAT", path, token).ConfigureAwait(false);
                 if (transfer is null)
                 {
                     while (true)
                     {
-                        var reply = await ReadSecuredReplyAsync(channel, token).ConfigureAwait(false);
-                        if (reply.Code == 110) { ProcessRestartMarkerReply(reply); continue; }
+                        FtpReply reply = await ReadSecuredReplyAsync(channel, token).ConfigureAwait(false);
+                        if (reply.Code == 110)
+                        {
+                            ProcessRestartMarkerReply(reply);
+                            continue;
+                        }
                         return reply;
                     }
                 }
                 await SendSecuredCommandAsync(channel, "NOOP", null, token).ConfigureAwait(false);
-                var replies = await DrainControlBarrierAsync(channel, transfer, "STAT", token).ConfigureAwait(false);
+                IReadOnlyList<FtpReply> replies = await DrainControlBarrierAsync(channel, transfer, "STAT", token).ConfigureAwait(false);
                 return replies.FirstOrDefault(static reply => reply.Code is not (226 or 250 or 426))
                     ?? throw new FtpProtocolException("STAT 未返回独立状态回复。");
             }, _options.CommandTimeout, linked.Token, "STAT 状态查询").ConfigureAwait(false);
         }
-        catch { if (statusSent) CloseConnection(); throw; }
+        catch
+        {
+            if (statusSent)
+                CloseConnection();
+            throw;
+        }
         finally
         {
-            if (ownsControl) _controlGate.Release();
-            if (ownsSession) _sessionGate.Release();
+            if (ownsControl)
+                _ = _controlGate.Release();
+            if (ownsSession)
+                _ = _sessionGate.Release();
         }
     }
 
     /// <summary>数据命令准备开始时公布事务；收到预备回复后才允许 ABOR 取消它的数据方向。</summary>
     private FtpActiveTransfer BeginActiveTransfer(CancellationToken operationToken)
     {
-        var transfer = new FtpActiveTransfer(operationToken);
+        FtpActiveTransfer transfer = new(operationToken);
         TaskCompletionSource began;
         lock (_transferStateLock)
         {
@@ -226,7 +255,7 @@ public sealed partial class FtpClient
             began = _transferBegan;
             _transferBegan = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         }
-        began.TrySetResult();
+        _ = began.TrySetResult();
         return transfer;
     }
 
@@ -234,8 +263,10 @@ public sealed partial class FtpClient
     private void EndActiveTransferPreparation()
     {
         FtpActiveTransfer? transfer;
-        lock (_transferStateLock) transfer = _activeTransfer;
-        if (transfer is null || (transfer.Started && transfer.AbortRequested)) return;
+        lock (_transferStateLock)
+            transfer = _activeTransfer;
+        if (transfer is null || (transfer.Started && transfer.AbortRequested))
+            return;
         transfer.FailPreparation();
         DetachActiveTransfer(transfer);
     }
@@ -243,7 +274,8 @@ public sealed partial class FtpClient
     /// <summary>返回当前数据事务的专用取消标记；普通控制阶段仍使用外层 token。</summary>
     private CancellationToken GetActiveTransferToken(CancellationToken fallback)
     {
-        lock (_transferStateLock) return _activeTransfer?.Token ?? fallback;
+        lock (_transferStateLock)
+            return _activeTransfer?.Token ?? fallback;
     }
 
     /// <summary>把打开的远程流释放责任登记到当前事务，使客户端级 ABOR 能在调用者不再读写时归还会话锁。</summary>
@@ -251,17 +283,21 @@ public sealed partial class FtpClient
     {
         ArgumentNullException.ThrowIfNull(release);
         FtpActiveTransfer? transfer;
-        lock (_transferStateLock) transfer = _activeTransfer;
-        if (transfer is null) return;
+        lock (_transferStateLock)
+            transfer = _activeTransfer;
+        if (transfer is null)
+            return;
         await transfer.RegisterRelease(release).ConfigureAwait(false);
-        if (transfer.AbortCompletion.IsCompletedSuccessfully) DetachActiveTransfer(transfer);
+        if (transfer.AbortCompletion.IsCompletedSuccessfully)
+            DetachActiveTransfer(transfer);
     }
 
     /// <summary>读取数据最终回复或消费STAT缓存，并在已有读取者等待226时由该读取者接管ABOR。</summary>
     private async Task<FtpReply> ReadTransferCompletionAsync(CancellationToken cancellationToken)
     {
         FtpActiveTransfer? transfer;
-        lock (_transferStateLock) transfer = _activeTransfer;
+        lock (_transferStateLock)
+            transfer = _activeTransfer;
         if (transfer?.AbortRequested == true)
             throw new FtpTransferAbortedException(await transfer.AbortCompletion.WaitAsync(_lifetime.Token).ConfigureAwait(false));
 
@@ -271,13 +307,14 @@ public sealed partial class FtpClient
         {
             if (transfer is null || (entered = transfer.TryEnterCompletionReader()))
             {
-                var channel = _channel ?? throw new ObjectDisposedException(nameof(FtpClient));
+                FtpControlChannel channel = _channel ?? throw new ObjectDisposedException(nameof(FtpClient));
                 while (true)
                 {
                     FtpReply? reply = null;
                     Task<FtpReply>? pending = null;
-                    using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                    if (_options.CommandTimeout != Timeout.InfiniteTimeSpan) deadline.CancelAfter(_options.CommandTimeout);
+                    using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    if (_options.CommandTimeout != Timeout.InfiniteTimeSpan)
+                        deadline.CancelAfter(_options.CommandTimeout);
                     try
                     {
                         if (transfer is null || !transfer.TryTakeCompletion(out reply))
@@ -288,52 +325,64 @@ public sealed partial class FtpClient
                                 // 不取消已开始的读：它可能已经读到半条状态行。收到中止请求后沿用同一reader消费回复。
                                 while (true)
                                 {
-                                    var statusSignal = transfer.StatusRequestedSignal;
-                                    await Task.WhenAny(pending, transfer.AbortRequestedSignal, statusSignal).ConfigureAwait(false);
+                                    Task statusSignal = transfer.StatusRequestedSignal;
+                                    _ = await Task.WhenAny(pending, transfer.AbortRequestedSignal, statusSignal).ConfigureAwait(false);
                                     if (transfer.AbortRequested && transfer.ReaderOwnsAbort)
                                     {
-                                        if (_options.CommandTimeout != Timeout.InfiniteTimeSpan) deadline.CancelAfter(_options.CommandTimeout);
-                                        var aborted = await AbortFromCompletionReaderAsync(channel, transfer, pending, null, deadline.Token).ConfigureAwait(false);
+                                        if (_options.CommandTimeout != Timeout.InfiniteTimeSpan)
+                                            deadline.CancelAfter(_options.CommandTimeout);
+                                        FtpAbortResult aborted = await AbortFromCompletionReaderAsync(channel, transfer, pending, null, deadline.Token).ConfigureAwait(false);
                                         throw new FtpTransferAbortedException(aborted);
                                     }
-                                    if (statusSignal.IsCompleted && transfer.TryTakeStatus(out var status))
+                                    if (statusSignal.IsCompleted && transfer.TryTakeStatus(out FtpTransferStatusRequest? status))
                                     {
-                                        if (_options.CommandTimeout != Timeout.InfiniteTimeSpan) deadline.CancelAfter(_options.CommandTimeout);
+                                        if (_options.CommandTimeout != Timeout.InfiniteTimeSpan)
+                                            deadline.CancelAfter(_options.CommandTimeout);
                                         await ProcessActiveStatusRequestAsync(channel, transfer, status!, pending, deadline.Token).ConfigureAwait(false);
                                         pending = null;
                                         break;
                                     }
-                                    if (pending.IsCompleted) break;
+                                    if (pending.IsCompleted)
+                                        break;
                                 }
-                                if (pending is null) continue;
+                                if (pending is null)
+                                    continue;
                             }
                             reply = await pending.ConfigureAwait(false);
                         }
-                        if (reply!.Code == 110) { ProcessRestartMarkerReply(reply); continue; }
+                        if (reply!.Code == 110)
+                        {
+                            ProcessRestartMarkerReply(reply);
+                            continue;
+                        }
                         IReadOnlyList<FtpTransferStatusRequest> pendingStatuses = Array.Empty<FtpTransferStatusRequest>();
                         if (transfer is null || transfer.TryFinishNormally(out pendingStatuses))
                         {
                             try
                             {
                                 Expect("TRANSFER", reply, 226, 250);
-                                foreach (var status in pendingStatuses)
+                                foreach (FtpTransferStatusRequest status in pendingStatuses)
                                 {
-                                    if (_options.CommandTimeout != Timeout.InfiniteTimeSpan) deadline.CancelAfter(_options.CommandTimeout);
+                                    if (_options.CommandTimeout != Timeout.InfiniteTimeSpan)
+                                        deadline.CancelAfter(_options.CommandTimeout);
                                     await ProcessActiveStatusRequestAsync(channel, transfer!, status, null, deadline.Token).ConfigureAwait(false);
                                 }
                             }
                             catch (Exception failure)
                             {
-                                foreach (var status in pendingStatuses) status.Fail(failure);
+                                foreach (FtpTransferStatusRequest status in pendingStatuses)
+                                    status.Fail(failure);
                                 throw;
                             }
                             _pendingSequence = false;
-                            if (transfer is not null) DetachActiveTransfer(transfer);
+                            if (transfer is not null)
+                                DetachActiveTransfer(transfer);
                             return reply;
                         }
                         // 最终回复和Abort请求同时到达，Abort先取得状态锁：226仍交给中止事务收集。
-                        if (_options.CommandTimeout != Timeout.InfiniteTimeSpan) deadline.CancelAfter(_options.CommandTimeout);
-                        var result = await AbortFromCompletionReaderAsync(channel, transfer, null, reply, deadline.Token).ConfigureAwait(false);
+                        if (_options.CommandTimeout != Timeout.InfiniteTimeSpan)
+                            deadline.CancelAfter(_options.CommandTimeout);
+                        FtpAbortResult result = await AbortFromCompletionReaderAsync(channel, transfer, null, reply, deadline.Token).ConfigureAwait(false);
                         throw new FtpTransferAbortedException(result);
                     }
                     catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
@@ -351,8 +400,9 @@ public sealed partial class FtpClient
         }
         finally
         {
-            if (entered) transfer!.LeaveCompletionReader();
-            _controlGate.Release();
+            if (entered)
+                transfer!.LeaveCompletionReader();
+            _ = _controlGate.Release();
         }
 
         // ABOR在本reader进入控制锁前已取得所有权，此时先归还控制锁再等待其结果。
@@ -366,19 +416,21 @@ public sealed partial class FtpClient
     private async Task<FtpAbortResult> AbortFromCompletionReaderAsync(FtpControlChannel channel,
         FtpActiveTransfer transfer, Task<FtpReply>? pendingReply, FtpReply? earlierReply, CancellationToken cancellationToken)
     {
-        var options = transfer.AbortOptions;
-        if (options.SendTelnetInterrupt) await SendTelnetInterruptAsync(cancellationToken).ConfigureAwait(false);
+        FtpAbortOptions options = transfer.AbortOptions;
+        if (options.SendTelnetInterrupt)
+            await SendTelnetInterruptAsync(cancellationToken).ConfigureAwait(false);
         await SendSecuredCommandAsync(channel, "ABOR", null, cancellationToken).ConfigureAwait(false);
         transfer.CancelData();
         CloseAbortedDataChannel();
         await SendSecuredCommandAsync(channel, "NOOP", null, cancellationToken).ConfigureAwait(false);
-        var replies = await DrainControlBarrierAsync(channel, transfer, "ABOR", cancellationToken, pendingReply, earlierReply).ConfigureAwait(false);
-        var rejected = replies.FirstOrDefault(static reply => reply.IsError && reply.Code != 426);
-        if (rejected is not null) throw new FtpCommandException("ABOR", rejected);
+        IReadOnlyList<FtpReply> replies = await DrainControlBarrierAsync(channel, transfer, "ABOR", cancellationToken, pendingReply, earlierReply).ConfigureAwait(false);
+        FtpReply? rejected = replies.FirstOrDefault(static reply => reply.IsError && reply.Code != 426);
+        if (rejected is not null)
+            throw new FtpCommandException("ABOR", rejected);
         if (!replies.Any(static reply => reply.Code is 225 or 226))
             throw new FtpProtocolException("ABOR没有返回225/226完成回复。");
         _pendingSequence = false;
-        var result = new FtpAbortResult(true, options.SendTelnetInterrupt, replies);
+        FtpAbortResult result = new(true, options.SendTelnetInterrupt, replies);
         await transfer.CompleteAbortAsync(result, releaseOwner: false).ConfigureAwait(false);
         DetachActiveTransfer(transfer);
         return result;
@@ -392,12 +444,16 @@ public sealed partial class FtpClient
         {
             await SendSecuredCommandAsync(channel, "STAT", request.Path, cancellationToken).ConfigureAwait(false);
             await SendSecuredCommandAsync(channel, "NOOP", null, cancellationToken).ConfigureAwait(false);
-            var replies = await DrainControlBarrierAsync(channel, transfer, "STAT", cancellationToken, pendingReply).ConfigureAwait(false);
-            var status = replies.FirstOrDefault(static reply => reply.Code is not (226 or 250 or 426))
+            IReadOnlyList<FtpReply> replies = await DrainControlBarrierAsync(channel, transfer, "STAT", cancellationToken, pendingReply).ConfigureAwait(false);
+            FtpReply status = replies.FirstOrDefault(static reply => reply.Code is not (226 or 250 or 426))
                 ?? throw new FtpProtocolException("STAT未返回独立状态回复。");
             request.Complete(status);
         }
-        catch (Exception exception) { request.Fail(exception); throw; }
+        catch (Exception exception)
+        {
+            request.Fail(exception);
+            throw;
+        }
     }
 
     /// <summary>
@@ -407,23 +463,33 @@ public sealed partial class FtpClient
     private async Task<Exception> HandleTransferFailureAsync(Exception exception)
     {
         FtpActiveTransfer? transfer;
-        lock (_transferStateLock) transfer = _activeTransfer;
-        if (transfer?.AbortRequested != true) return exception;
+        lock (_transferStateLock)
+            transfer = _activeTransfer;
+        if (transfer?.AbortRequested != true)
+            return exception;
         try
         {
-            var result = await transfer.AbortCompletion.WaitAsync(_lifetime.Token).ConfigureAwait(false);
+            FtpAbortResult result = await transfer.AbortCompletion.WaitAsync(_lifetime.Token).ConfigureAwait(false);
             DetachActiveTransfer(transfer);
             return new FtpTransferAbortedException(result);
         }
-        catch (Exception abortFailure) { return abortFailure; }
+        catch (Exception abortFailure)
+        {
+            return abortFailure;
+        }
     }
 
     /// <summary>控制连接关闭或 REIN 清理时取消旧事务，并唤醒所有 ABOR/STAT 等待者。</summary>
     private void ResetActiveTransferState()
     {
         FtpActiveTransfer? transfer;
-        lock (_transferStateLock) { transfer = _activeTransfer; _activeTransfer = null; }
-        if (transfer is null) return;
+        lock (_transferStateLock)
+        {
+            transfer = _activeTransfer;
+            _activeTransfer = null;
+        }
+        if (transfer is null)
+            return;
         transfer.Close();
         transfer.Dispose();
     }
@@ -433,7 +499,8 @@ public sealed partial class FtpClient
     {
         lock (_transferStateLock)
         {
-            if (ReferenceEquals(_activeTransfer, transfer)) _activeTransfer = null;
+            if (ReferenceEquals(_activeTransfer, transfer))
+                _activeTransfer = null;
         }
         transfer.Dispose();
     }
@@ -443,8 +510,9 @@ public sealed partial class FtpClient
     {
         Interlocked.Exchange(ref _dataClient, null)?.Dispose();
         Interlocked.Exchange(ref _dataStream, null)?.Dispose();
-        var application = Interlocked.Exchange(ref _dataApplicationStream, null);
-        if (application is FtpDataWriteStream writer) writer.Abort();
+        Stream? application = Interlocked.Exchange(ref _dataApplicationStream, null);
+        if (application is FtpDataWriteStream writer)
+            writer.Abort();
         application?.Dispose();
         Interlocked.Exchange(ref _dataTlsSession, null)?.Dispose();
     }
@@ -459,22 +527,33 @@ public sealed partial class FtpClient
         {
             FtpActiveTransfer? current;
             Task began;
-            lock (_transferStateLock) { current = _activeTransfer; began = _transferBegan.Task; }
-            if (current is not null) return (current, false);
-            using var race = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            var session = _sessionGate.WaitAsync(race.Token);
-            var started = began.WaitAsync(race.Token);
-            await Task.WhenAny(session, started).ConfigureAwait(false);
+            lock (_transferStateLock)
+            {
+                current = _activeTransfer;
+                began = _transferBegan.Task;
+            }
+            if (current is not null)
+                return (current, false);
+            using CancellationTokenSource race = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            Task session = _sessionGate.WaitAsync(race.Token);
+            Task started = began.WaitAsync(race.Token);
+            _ = await Task.WhenAny(session, started).ConfigureAwait(false);
             race.Cancel();
             var acquired = false;
-            try { await session.ConfigureAwait(false); acquired = true; }
+            try
+            {
+                await session.ConfigureAwait(false);
+                acquired = true;
+            }
             catch (OperationCanceledException) { }
             if (cancellationToken.IsCancellationRequested)
             {
-                if (acquired) _sessionGate.Release();
+                if (acquired)
+                    _ = _sessionGate.Release();
                 cancellationToken.ThrowIfCancellationRequested();
             }
-            if (acquired) return (null, true);
+            if (acquired)
+                return (null, true);
         }
     }
 
@@ -486,20 +565,36 @@ public sealed partial class FtpClient
         FtpActiveTransfer? transfer, string command, CancellationToken cancellationToken,
         Task<FtpReply>? pendingReply = null, FtpReply? earlierReply = null)
     {
-        var replies = new List<FtpReply>();
+        List<FtpReply> replies = [];
         for (var index = 0; index < _options.MaxReplyLines; index++)
         {
             FtpReply reply;
-            if (earlierReply is not null) { reply = earlierReply; earlierReply = null; }
-            else if (pendingReply is not null) { reply = await pendingReply.ConfigureAwait(false); pendingReply = null; }
-            else reply = await ReadSecuredReplyAsync(channel, cancellationToken).ConfigureAwait(false);
-            if (reply.Code == 110) { ProcessRestartMarkerReply(reply); continue; }
-            if (reply.Code == 200) return replies.AsReadOnly();
-            if (reply.Code == 421) throw new FtpCommandException(command, reply);
+            if (earlierReply is not null)
+            {
+                reply = earlierReply;
+                earlierReply = null;
+            }
+            else if (pendingReply is not null)
+            {
+                reply = await pendingReply.ConfigureAwait(false);
+                pendingReply = null;
+            }
+            else
+                reply = await ReadSecuredReplyAsync(channel, cancellationToken).ConfigureAwait(false);
+            if (reply.Code == 110)
+            {
+                ProcessRestartMarkerReply(reply);
+                continue;
+            }
+            if (reply.Code == 200)
+                return replies.AsReadOnly();
+            if (reply.Code == 421)
+                throw new FtpCommandException(command, reply);
             if (reply.IsPreliminary || reply.IsIntermediate)
                 throw new FtpProtocolException(command + " 同步期间收到不允许的中间回复。");
             replies.Add(reply);
-            if (command == "STAT" && reply.Code is 226 or 250 or 426) transfer?.QueueCompletion(reply);
+            if (command == "STAT" && reply.Code is 226 or 250 or 426)
+                transfer?.QueueCompletion(reply);
         }
         throw new FtpProtocolException(command + " 同步回复数超过配置限制。");
     }
@@ -507,11 +602,12 @@ public sealed partial class FtpClient
     /// <summary>在未加密控制通道发送 Telnet IP 及带 TCP urgent 标记的 Data Mark。</summary>
     private async Task SendTelnetInterruptAsync(CancellationToken cancellationToken)
     {
-        var stream = _controlStream ?? throw new ObjectDisposedException(nameof(FtpClient));
+        Stream stream = _controlStream ?? throw new ObjectDisposedException(nameof(FtpClient));
         await stream.WriteAsync(new byte[] { 255, 244, 255 }, cancellationToken).ConfigureAwait(false);
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
-        var socket = _controlClient?.Client ?? throw new ObjectDisposedException(nameof(FtpClient));
+        Socket socket = _controlClient?.Client ?? throw new ObjectDisposedException(nameof(FtpClient));
         var sent = await socket.SendAsync(new byte[] { 242 }.AsMemory(), SocketFlags.OutOfBand, cancellationToken).ConfigureAwait(false);
-        if (sent != 1) throw new IOException("Telnet SYNCH 的 Data Mark 未完整发送。");
+        if (sent != 1)
+            throw new IOException("Telnet SYNCH 的 Data Mark 未完整发送。");
     }
 }

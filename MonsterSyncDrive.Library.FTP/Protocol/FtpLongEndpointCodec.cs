@@ -38,14 +38,15 @@ internal static class FtpLongEndpointCodec
     internal static string FormatActive(IPEndPoint endpoint)
     {
         ArgumentNullException.ThrowIfNull(endpoint);
-        if (endpoint.Port is < 1 or > 65535) throw new ArgumentOutOfRangeException(nameof(endpoint), "LPRT 数据端口必须非零。");
-        var address = endpoint.Address.IsIPv4MappedToIPv6 ? endpoint.Address.MapToIPv4() : endpoint.Address;
+        if (endpoint.Port is < 1 or > 65535)
+            throw new ArgumentOutOfRangeException(nameof(endpoint), "LPRT 数据端口必须非零。");
+        IPAddress address = endpoint.Address.IsIPv4MappedToIPv6 ? endpoint.Address.MapToIPv4() : endpoint.Address;
         ValidateUnicast(address);
         if (address.AddressFamily == AddressFamily.InterNetworkV6 && address.ScopeId != 0)
             throw new ArgumentException("LPRT 不携带 IPv6 scope ID；请公布不含接口作用域的地址。", nameof(endpoint));
         if (address.AddressFamily is not (AddressFamily.InterNetwork or AddressFamily.InterNetworkV6))
             throw new ArgumentException("LPRT 只支持 IPv4 或 IPv6 TCP 端点。", nameof(endpoint));
-        var octets = address.GetAddressBytes();
+        byte[] octets = address.GetAddressBytes();
         var values = new List<string>(octets.Length + 5)
         {
             address.AddressFamily == AddressFamily.InterNetwork ? "4" : "6",
@@ -67,10 +68,11 @@ internal static class FtpLongEndpointCodec
     internal static IPEndPoint ParsePassive(string replyMessage)
     {
         ArgumentNullException.ThrowIfNull(replyMessage);
-        var start = replyMessage.LastIndexOf('(');
-        var end = start < 0 ? -1 : replyMessage.IndexOf(')', start + 1);
-        if (start < 0 || end < 0) throw new FtpProtocolException("LPSV 回复缺少括号端点。");
-        return ParseAddress(replyMessage.AsSpan(start + 1, end - start - 1).ToString());
+        int start = replyMessage.LastIndexOf('(');
+        int end = start < 0 ? -1 : replyMessage.IndexOf(')', start + 1);
+        return start < 0 || end < 0
+            ? throw new FtpProtocolException("LPSV 回复缺少括号端点。")
+            : ParseAddress(replyMessage.AsSpan(start + 1, end - start - 1).ToString());
     }
 
     /// <summary>解析 LPRT 参数或 LPSV 括号中的长地址，用于独立测试和测试服务器的相反方向。</summary>
@@ -81,17 +83,18 @@ internal static class FtpLongEndpointCodec
         ArgumentNullException.ThrowIfNull(value);
         // IPv6 是最长的受支持形式：af + hal + 16 个地址字节 + pal + 2 个端口字节。
         // 在分配字段数组之前限制输入长度，防止把畸形端点误当成不受限的整数序列。
-        if (value.Length > 128) throw new FtpProtocolException("长地址端点的文本长度无效。");
-        var fields = value.Split(',');
+        if (value.Length > 128)
+            throw new FtpProtocolException("长地址端点的文本长度无效。");
+        string[] fields = value.Split(',');
         if (fields.Length is < 9 or > 21)
             throw new FtpProtocolException("长地址端点的字段数或文本长度无效。");
-        var bytes = new byte[fields.Length];
-        for (var index = 0; index < fields.Length; index++)
+        byte[] bytes = new byte[fields.Length];
+        for (int index = 0; index < fields.Length; index++)
         {
             if (!byte.TryParse(fields[index].Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out bytes[index]))
                 throw new FtpProtocolException("长地址端点必须由 0 至 255 的十进制八位整数组成。");
         }
-        var addressLength = bytes[0] switch
+        int addressLength = bytes[0] switch
         {
             4 => 4,
             6 => 16,
@@ -99,10 +102,12 @@ internal static class FtpLongEndpointCodec
         };
         if (bytes[1] != addressLength || bytes.Length != addressLength + 5 || bytes[addressLength + 2] != 2)
             throw new FtpProtocolException("长地址端点的地址长度或 TCP 端口长度不匹配。");
-        var port = (bytes[^2] << 8) | bytes[^1];
-        if (port == 0) throw new FtpProtocolException("长地址端点不能使用零端口。");
+        int port = (bytes[^2] << 8) | bytes[^1];
+        if (port == 0)
+            throw new FtpProtocolException("长地址端点不能使用零端口。");
         var address = new IPAddress(bytes.AsSpan(2, addressLength));
-        if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+        if (address.IsIPv4MappedToIPv6)
+            address = address.MapToIPv4();
         ValidateUnicast(address);
         return new IPEndPoint(address, port);
     }

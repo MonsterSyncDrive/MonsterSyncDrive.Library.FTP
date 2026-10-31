@@ -26,10 +26,16 @@ namespace MonsterSyncDrive.Library.FTP;
 public sealed record FtpSiteCommand
 {
     /// <summary>SITE 后的完整参数，例如 CPFR /source 或 CPTO /destination；不能包含控制字符。</summary>
-    public required string Arguments { get; init; }
+    public required string Arguments
+    {
+        get; init;
+    }
 
     /// <summary>此步骤是否必须返回 3xx 中间回复。最后一步必须为 false，并返回最终 2xx 回复。</summary>
-    public bool RequiresContinuation { get; init; }
+    public bool RequiresContinuation
+    {
+        get; init;
+    }
 }
 
 /// <summary>RFC 3659 perm fact 表示的当前用户操作权限。它不同于 UNIX 文件模式位。</summary>

@@ -29,8 +29,9 @@ internal static class FtpTimeout
     internal static async Task<T> RunAsync<T>(Func<CancellationToken, Task<T>> operation, TimeSpan timeout,
         CancellationToken cancellationToken, string description)
     {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        if (timeout != Timeout.InfiniteTimeSpan) deadline.CancelAfter(timeout);
+        using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (timeout != Timeout.InfiniteTimeSpan)
+            deadline.CancelAfter(timeout);
         try
         {
             return await operation(deadline.Token).ConfigureAwait(false);
@@ -43,7 +44,13 @@ internal static class FtpTimeout
 
     /// <summary>运行无返回值的网络阶段，并复用统一的超时异常转换。</summary>
     internal static Task RunAsync(Func<CancellationToken, Task> operation, TimeSpan timeout,
-        CancellationToken cancellationToken, string description) =>
-        RunAsync(async token => { await operation(token).ConfigureAwait(false); return true; },
+        CancellationToken cancellationToken, string description)
+    {
+        return RunAsync(async token =>
+        {
+            await operation(token).ConfigureAwait(false);
+            return true;
+        },
             timeout, cancellationToken, description);
+    }
 }

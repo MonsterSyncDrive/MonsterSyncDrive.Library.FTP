@@ -30,18 +30,26 @@ public sealed class FtpReply
     /// <param name="lines">原始回复行，不含 CRLF。</param>
     public FtpReply(int code, IEnumerable<string> lines)
     {
-        if (code is < 100 or > 699) throw new ArgumentOutOfRangeException(nameof(code));
+        if (code is < 100 or > 699)
+            throw new ArgumentOutOfRangeException(nameof(code));
         ArgumentNullException.ThrowIfNull(lines);
         Code = code;
         Lines = Array.AsReadOnly(lines.ToArray());
-        if (Lines.Count == 0) throw new ArgumentException("回复至少包含一行。", nameof(lines));
+        if (Lines.Count == 0)
+            throw new ArgumentException("回复至少包含一行。", nameof(lines));
     }
 
     /// <summary>三位数字回复码。</summary>
-    public int Code { get; }
+    public int Code
+    {
+        get;
+    }
 
     /// <summary>原始回复行，只读且保持服务器顺序。</summary>
-    public IReadOnlyList<string> Lines { get; }
+    public IReadOnlyList<string> Lines
+    {
+        get;
+    }
 
     /// <summary>最后一行除去状态码和分隔符的文本。</summary>
     public string Message => Lines[^1].Length > 4 ? Lines[^1][4..] : string.Empty;
@@ -59,5 +67,8 @@ public sealed class FtpReply
     public bool IsError => Code is >= 400 and < 600;
 
     /// <summary>生成完整回复文本，便于诊断。</summary>
-    public override string ToString() => string.Join(Environment.NewLine, Lines);
+    public override string ToString()
+    {
+        return string.Join(Environment.NewLine, Lines);
+    }
 }

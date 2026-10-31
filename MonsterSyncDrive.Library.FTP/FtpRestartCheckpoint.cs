@@ -26,11 +26,20 @@ namespace MonsterSyncDrive.Library.FTP;
 public sealed record FtpRestartCheckpoint
 {
     /// <summary>数据发送端写入的本地标记。</summary>
-    public required string UserMarker { get; init; }
+    public required string UserMarker
+    {
+        get; init;
+    }
 
     /// <summary>服务器可接受为后续 REST 参数的对应标记。</summary>
-    public required string ServerMarker { get; init; }
+    public required string ServerMarker
+    {
+        get; init;
+    }
 
     /// <summary>服务器提供映射的原始回复。</summary>
-    public required FtpReply Reply { get; init; }
+    public required FtpReply Reply
+    {
+        get; init;
+    }
 }
