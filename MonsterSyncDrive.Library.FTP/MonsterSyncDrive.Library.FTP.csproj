@@ -51,11 +51,4 @@ SOFTWARE.
     <None Update="README.md" Pack="true" PackagePath="/" />
   </ItemGroup>
 
-  <ItemGroup>
-    <EditorConfigFiles Remove="D:\Documents\Github\MonsterSyncDrive.Library.FTP\MonsterSyncDrive.Library.FTP\.editorconfig" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="D:\Documents\Github\MonsterSyncDrive.Library.FTP\MonsterSyncDrive.Library.FTP\.editorconfig" />
-  </ItemGroup>
 </Project>

@@ -144,7 +144,8 @@ internal sealed class FtpControlChannel
                 // SB ... IAC SE：子协商也计入回复总字节预算，恶意对端不能无限发送协商流。
                 while (true)
                 {
-                    if (await this.ReadRawByteAsync(cancellationToken).ConfigureAwait(false) is 255 and 240) break;
+                    if (await this.ReadRawByteAsync(cancellationToken).ConfigureAwait(false) == 255 &&
+                        await this.ReadRawByteAsync(cancellationToken).ConfigureAwait(false) == 240) break;
                 }
             }
         }

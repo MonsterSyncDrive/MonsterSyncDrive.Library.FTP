@@ -1,0 +1,50 @@
+name: Publish NuGet package
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PROJECT_PATH: MonsterSyncDrive.Library.FTP/MonsterSyncDrive.Library.FTP.csproj
+      # Include the attempt so re-running a workflow also creates a new version.
+      PACKAGE_VERSION: 1.0.0-ci.${{ github.run_number }}.${{ github.run_attempt }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build and pack
+        # dotnet pack restores dependencies and builds before creating the package.
+        run: >-
+          dotnet pack "$PROJECT_PATH"
+          --configuration Release
+          --output "$RUNNER_TEMP/nuget"
+          -p:Version="$PACKAGE_VERSION"
+          -p:ContinuousIntegrationBuild=true
+          -p:RepositoryUrl="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          -p:RepositoryType=git
+          -p:RepositoryCommit="$GITHUB_SHA"
+
+      - name: Publish to GitHub Packages
+        env:
+          NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NUGET_SOURCE: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+        run: >-
+          dotnet nuget push "$RUNNER_TEMP/nuget/*.nupkg"
+          --source "$NUGET_SOURCE"
+          --api-key "$NUGET_AUTH_TOKEN"
+          --skip-duplicate
